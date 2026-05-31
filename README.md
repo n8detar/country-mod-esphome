@@ -5,7 +5,7 @@ ESPHome external component for the Countrymod RV AC IR protocol decoded from
 
 The protocol is full-state: each update sends two state packets. The component
 keeps the current climate state locally, builds both packet variants, and
-transmits them about 110 ms apart.
+transmits the pair as one raw IR sequence.
 
 ESPHome's receiver identifies the first 32 bits as `remote.lg`, but the physical
 remote transmits those bits as a Countrymod burst with a 9 ms / 4.5 ms header,

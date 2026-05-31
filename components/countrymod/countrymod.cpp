@@ -264,14 +264,11 @@ void CountrymodClimate::transmit_state() {
   const uint32_t second_tail = this->make_tail_(true);
 
   ESP_LOGD(TAG,
-           "Sending Countrymod climate packets: 0x%08" PRIX32 "/0x%08" PRIX32 " then 0x%08" PRIX32 "/0x%08" PRIX32,
+           "Sending Countrymod climate packet pair: 0x%08" PRIX32 "/0x%08" PRIX32 " then 0x%08" PRIX32
+           "/0x%08" PRIX32,
            first_frame, first_tail, second_frame, second_tail);
 
-  this->cancel_timeout("countrymod-second-frame");
-  this->transmit_countrymod_climate_frame_(first_frame, first_tail);
-  this->set_timeout("countrymod-second-frame", this->inter_frame_delay_ms_, [this, second_frame, second_tail]() {
-    this->transmit_countrymod_climate_frame_(second_frame, second_tail);
-  });
+  this->transmit_countrymod_climate_pair_(first_frame, first_tail, second_frame, second_tail);
 }
 
 bool CountrymodClimate::on_receive(remote_base::RemoteReceiveData data) {
@@ -375,17 +372,25 @@ void CountrymodClimate::transmit_countrymod_frame_(uint32_t frame) {
   transmit.perform();
 }
 
-void CountrymodClimate::transmit_countrymod_climate_frame_(uint32_t frame, uint32_t tail) {
+void CountrymodClimate::transmit_countrymod_climate_pair_(uint32_t first_frame, uint32_t first_tail,
+                                                          uint32_t second_frame, uint32_t second_tail) {
   if (this->transmitter_ == nullptr) {
     ESP_LOGW(TAG, "Cannot transmit without a remote transmitter");
     return;
   }
 
+  const uint32_t first_packet_duration_us =
+      this->climate_packet_duration_(first_frame, first_tail, COUNTRYMOD_FRAME_GAP_US);
+  const uint32_t target_packet_spacing_us = this->inter_frame_delay_ms_ * 1000UL;
+  const uint32_t first_final_gap_us =
+      COUNTRYMOD_FRAME_GAP_US +
+      (target_packet_spacing_us > first_packet_duration_us ? target_packet_spacing_us - first_packet_duration_us : 0);
+
   auto transmit = this->transmitter_->transmit();
   auto *data = transmit.get_data();
-  data->reserve(2 + COUNTRYMOD_FRAME_NBITS * 2u + 2 + COUNTRYMOD_TAIL_NBITS * 2u + 2);
-  this->encode_countrymod_frame_(data, frame, COUNTRYMOD_MESSAGE_SPACE_US);
-  this->encode_countrymod_tail_(data, tail);
+  data->reserve((2 + COUNTRYMOD_FRAME_NBITS * 2u + 2 + COUNTRYMOD_TAIL_NBITS * 2u + 2) * 2u);
+  this->encode_countrymod_climate_packet_(data, first_frame, first_tail, first_final_gap_us);
+  this->encode_countrymod_climate_packet_(data, second_frame, second_tail, COUNTRYMOD_FRAME_GAP_US);
   transmit.perform();
 }
 
@@ -403,12 +408,34 @@ void CountrymodClimate::encode_countrymod_frame_(remote_base::RemoteTransmitData
   dst->space(gap_us);
 }
 
-void CountrymodClimate::encode_countrymod_tail_(remote_base::RemoteTransmitData *dst, uint32_t tail) const {
+void CountrymodClimate::encode_countrymod_tail_(remote_base::RemoteTransmitData *dst, uint32_t tail,
+                                                uint32_t gap_us) const {
   for (uint32_t mask = uint32_t{1} << (COUNTRYMOD_TAIL_NBITS - 1); mask != 0; mask >>= 1) {
     dst->item(COUNTRYMOD_BIT_MARK_US, (tail & mask) != 0 ? COUNTRYMOD_ONE_SPACE_US : COUNTRYMOD_ZERO_SPACE_US);
   }
   dst->mark(COUNTRYMOD_BIT_MARK_US);
-  dst->space(COUNTRYMOD_FRAME_GAP_US);
+  dst->space(gap_us);
+}
+
+void CountrymodClimate::encode_countrymod_climate_packet_(remote_base::RemoteTransmitData *dst, uint32_t frame,
+                                                          uint32_t tail, uint32_t final_gap_us) const {
+  this->encode_countrymod_frame_(dst, frame, COUNTRYMOD_MESSAGE_SPACE_US);
+  this->encode_countrymod_tail_(dst, tail, final_gap_us);
+}
+
+uint32_t CountrymodClimate::climate_packet_duration_(uint32_t frame, uint32_t tail, uint32_t final_gap_us) const {
+  const uint64_t burst = (uint64_t{frame} << COUNTRYMOD_TRAILER_NBITS) | COUNTRYMOD_TRAILER_BITS;
+  return COUNTRYMOD_HEADER_MARK_US + COUNTRYMOD_HEADER_SPACE_US +
+         this->bit_duration_(burst, COUNTRYMOD_FRAME_NBITS) + COUNTRYMOD_BIT_MARK_US + COUNTRYMOD_MESSAGE_SPACE_US +
+         this->bit_duration_(tail, COUNTRYMOD_TAIL_NBITS) + COUNTRYMOD_BIT_MARK_US + final_gap_us;
+}
+
+uint32_t CountrymodClimate::bit_duration_(uint64_t value, uint8_t nbits) const {
+  uint32_t duration = 0;
+  for (uint64_t mask = uint64_t{1} << (nbits - 1); mask != 0; mask >>= 1) {
+    duration += COUNTRYMOD_BIT_MARK_US + ((value & mask) != 0 ? COUNTRYMOD_ONE_SPACE_US : COUNTRYMOD_ZERO_SPACE_US);
+  }
+  return duration;
 }
 
 bool CountrymodClimate::apply_lg_frame_(uint32_t frame) {
