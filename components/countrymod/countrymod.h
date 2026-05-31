@@ -1,5 +1,6 @@
 #pragma once
 
+#include "esphome/components/button/button.h"
 #include "esphome/components/climate_ir/climate_ir.h"
 #include "esphome/components/switch/switch.h"
 
@@ -11,6 +12,10 @@ enum CountrymodSwitchKind : uint8_t {
   COUNTRYMOD_SWITCH_TURBO = 0,
   COUNTRYMOD_SWITCH_NIGHT = 1,
   COUNTRYMOD_SWITCH_FEATURE = 2,
+};
+
+enum CountrymodButtonKind : uint8_t {
+  COUNTRYMOD_BUTTON_LIGHT = 0,
 };
 
 class CountrymodClimate : public climate_ir::ClimateIR {
@@ -29,6 +34,7 @@ class CountrymodClimate : public climate_ir::ClimateIR {
   bool set_turbo(bool turbo_on);
   bool set_night(bool night_on);
   bool set_feature(bool feature_on);
+  void send_light_command();
 
   void set_turbo_switch(switch_::Switch *turbo_switch) { this->turbo_switch_ = turbo_switch; }
   void set_night_switch(switch_::Switch *night_switch) { this->night_switch_ = night_switch; }
@@ -66,6 +72,16 @@ class CountrymodClimate : public climate_ir::ClimateIR {
   switch_::Switch *turbo_switch_{nullptr};
   switch_::Switch *night_switch_{nullptr};
   switch_::Switch *feature_switch_{nullptr};
+};
+
+class CountrymodButton : public button::Button, public Parented<CountrymodClimate> {
+ public:
+  explicit CountrymodButton(CountrymodButtonKind kind) : kind_(kind) {}
+
+ protected:
+  void press_action() override;
+
+  CountrymodButtonKind kind_;
 };
 
 class CountrymodSwitch : public switch_::Switch, public Parented<CountrymodClimate> {

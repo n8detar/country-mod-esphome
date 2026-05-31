@@ -43,6 +43,12 @@ switch:
     countrymod_id: rv_ac
     type: feature
     name: RV AC Feature Bit
+
+button:
+  - platform: countrymod
+    countrymod_id: rv_ac
+    type: light
+    name: RV AC Light
 ```
 
 Supported climate modes are `OFF`, `COOL`, `HEAT`, and `FAN_ONLY`. Supported
@@ -52,3 +58,7 @@ protocol's shared fan code for display speeds 3/4/5.
 The ambiguous protocol bit `0x40` is exposed as a neutral `feature` switch by
 default. Set `feature_as_swing: true` only after verifying that the physical
 unit treats that bit as swing.
+
+The `light` button sends the separate one-frame command captured from the remote
+button labeled with a crossed-out lightbulb. Its exact physical behavior still
+needs verification, so it is exposed as a momentary button rather than a switch.

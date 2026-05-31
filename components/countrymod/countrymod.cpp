@@ -23,6 +23,8 @@ static constexpr uint8_t TURBO_FLAG = 0x10;
 static constexpr uint8_t FIRST_PACKET_MARKER = 0x58;
 static constexpr uint8_t SECOND_PACKET_MARKER = 0x78;
 
+static constexpr uint32_t LIGHT_COMMAND_FRAME = 0x008844CC;
+
 void CountrymodClimate::setup() {
   climate_ir::ClimateIR::setup();
   this->sanitize_state_();
@@ -157,6 +159,11 @@ bool CountrymodClimate::set_feature(bool feature_on) {
   return true;
 }
 
+void CountrymodClimate::send_light_command() {
+  ESP_LOGD(TAG, "Sending Countrymod light/display command: 0x%08" PRIX32, LIGHT_COMMAND_FRAME);
+  this->transmit_lg_frame_(LIGHT_COMMAND_FRAME);
+}
+
 void CountrymodClimate::transmit_state() {
   const uint32_t first_frame = this->make_frame_(false);
   const uint32_t second_frame = this->make_frame_(true);
@@ -174,6 +181,10 @@ bool CountrymodClimate::on_receive(remote_base::RemoteReceiveData data) {
   auto decoded = remote_base::LGProtocol().decode(data);
   if (!decoded.has_value() || decoded->nbits != 32) {
     return false;
+  }
+  if (decoded->data == LIGHT_COMMAND_FRAME) {
+    ESP_LOGD(TAG, "Received Countrymod light/display command: 0x%08" PRIX32, decoded->data);
+    return true;
   }
   return this->apply_lg_frame_(decoded->data);
 }
@@ -409,6 +420,19 @@ void CountrymodClimate::sanitize_state_() {
     this->swing_mode = this->feature_on_ ? climate::CLIMATE_SWING_VERTICAL : climate::CLIMATE_SWING_OFF;
   } else {
     this->swing_mode = climate::CLIMATE_SWING_OFF;
+  }
+}
+
+void CountrymodButton::press_action() {
+  if (this->get_parent() == nullptr) {
+    ESP_LOGW(TAG, "Ignoring button press without parent");
+    return;
+  }
+
+  switch (this->kind_) {
+    case COUNTRYMOD_BUTTON_LIGHT:
+      this->get_parent()->send_light_command();
+      break;
   }
 }
 
