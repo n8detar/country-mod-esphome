@@ -44,6 +44,12 @@ static constexpr uint32_t LIGHT_COMMAND_FRAME = 0x008844CC;
 static constexpr uint32_t DISPLAY_COMMAND_FRAME = 0x22AA66EE;
 static constexpr uint32_t VIEW_VOLTAGE_COMMAND_FRAME = 0x55DD33BB;
 
+static const char *const COUNTRYMOD_FAN_SPEED_1 = "Speed 1";
+static const char *const COUNTRYMOD_FAN_SPEED_2 = "Speed 2";
+static const char *const COUNTRYMOD_FAN_SPEED_3 = "Speed 3";
+static const char *const COUNTRYMOD_FAN_SPEED_4 = "Speed 4";
+static const char *const COUNTRYMOD_FAN_SPEED_5 = "Speed 5";
+
 void CountrymodClimate::setup() {
   climate_ir::ClimateIR::setup();
   this->sanitize_state_();
@@ -86,6 +92,8 @@ climate::ClimateTraits CountrymodClimate::traits() {
   }
   traits.set_supported_fan_modes({climate::CLIMATE_FAN_AUTO, climate::CLIMATE_FAN_LOW, climate::CLIMATE_FAN_MEDIUM,
                                   climate::CLIMATE_FAN_HIGH});
+  traits.set_supported_custom_fan_modes({COUNTRYMOD_FAN_SPEED_1, COUNTRYMOD_FAN_SPEED_2, COUNTRYMOD_FAN_SPEED_3,
+                                         COUNTRYMOD_FAN_SPEED_4, COUNTRYMOD_FAN_SPEED_5});
   traits.set_supported_presets(
       {climate::CLIMATE_PRESET_NONE, climate::CLIMATE_PRESET_ECO, climate::CLIMATE_PRESET_BOOST});
   traits.set_visual_min_temperature(16.0f);
@@ -144,13 +152,16 @@ void CountrymodClimate::control(const climate::ClimateCall &call) {
       case climate::CLIMATE_FAN_LOW:
       case climate::CLIMATE_FAN_MEDIUM:
       case climate::CLIMATE_FAN_HIGH:
-        this->fan_mode = *call.get_fan_mode();
+        this->set_fan_mode_(*call.get_fan_mode());
         break;
       default:
         ESP_LOGW(TAG, "Unsupported fan mode requested: %s",
                  LOG_STR_ARG(climate::climate_fan_mode_to_string(*call.get_fan_mode())));
         break;
     }
+  }
+  if (call.has_custom_fan_mode()) {
+    this->set_custom_fan_mode_(call.get_custom_fan_mode());
   }
 
   if (preset_requested) {
@@ -474,7 +485,7 @@ bool CountrymodClimate::apply_lg_frame_(uint32_t frame) {
     this->last_on_mode_ = decoded_mode;
   }
 
-  this->fan_mode = this->fan_mode_from_code_((control >> 4) & 0x03);
+  this->set_fan_mode_(this->fan_mode_from_code_((control >> 4) & 0x03));
   if (!decoded_eco) {
     this->target_temperature = clamp<float>(static_cast<float>(temp_code) + 16.0f, 16.0f, 30.0f);
   }
@@ -522,29 +533,27 @@ uint8_t CountrymodClimate::mode_base_for_transmit_() const {
   }
 }
 
-uint8_t CountrymodClimate::fan_code_for_transmit_() const {
-  if (this->turbo_on_) {
-    return 3;
-  }
-  if (!this->fan_mode.has_value()) {
-    return 0;
-  }
-  switch (*this->fan_mode) {
-    case climate::CLIMATE_FAN_LOW:
-      return 1;
-    case climate::CLIMATE_FAN_MEDIUM:
-      return 2;
-    case climate::CLIMATE_FAN_HIGH:
-      return 3;
-    case climate::CLIMATE_FAN_AUTO:
-    default:
-      return 0;
-  }
-}
-
-uint8_t CountrymodClimate::tail_fan_code_for_transmit_() const {
+uint8_t CountrymodClimate::fan_speed_for_transmit_() const {
   if (this->turbo_on_) {
     return 5;
+  }
+  if (this->has_custom_fan_mode()) {
+    auto custom_fan_mode = this->get_custom_fan_mode();
+    if (custom_fan_mode == COUNTRYMOD_FAN_SPEED_1) {
+      return 1;
+    }
+    if (custom_fan_mode == COUNTRYMOD_FAN_SPEED_2) {
+      return 2;
+    }
+    if (custom_fan_mode == COUNTRYMOD_FAN_SPEED_3) {
+      return 3;
+    }
+    if (custom_fan_mode == COUNTRYMOD_FAN_SPEED_4) {
+      return 4;
+    }
+    if (custom_fan_mode == COUNTRYMOD_FAN_SPEED_5) {
+      return 5;
+    }
   }
   if (!this->fan_mode.has_value()) {
     return 0;
@@ -560,6 +569,14 @@ uint8_t CountrymodClimate::tail_fan_code_for_transmit_() const {
     default:
       return 0;
   }
+}
+
+uint8_t CountrymodClimate::fan_code_for_transmit_() const {
+  return std::min<uint8_t>(this->fan_speed_for_transmit_(), 3);
+}
+
+uint8_t CountrymodClimate::tail_fan_code_for_transmit_() const {
+  return this->fan_speed_for_transmit_();
 }
 
 climate::ClimateFanMode CountrymodClimate::fan_mode_from_code_(uint8_t fan_code) const {
@@ -656,18 +673,20 @@ void CountrymodClimate::sanitize_state_() {
   }
 
   if (!this->fan_mode.has_value()) {
-    this->fan_mode = climate::CLIMATE_FAN_AUTO;
-  }
-
-  switch (*this->fan_mode) {
-    case climate::CLIMATE_FAN_AUTO:
-    case climate::CLIMATE_FAN_LOW:
-    case climate::CLIMATE_FAN_MEDIUM:
-    case climate::CLIMATE_FAN_HIGH:
-      break;
-    default:
-      this->fan_mode = climate::CLIMATE_FAN_AUTO;
-      break;
+    if (!this->has_custom_fan_mode()) {
+      this->set_fan_mode_(climate::CLIMATE_FAN_AUTO);
+    }
+  } else {
+    switch (*this->fan_mode) {
+      case climate::CLIMATE_FAN_AUTO:
+      case climate::CLIMATE_FAN_LOW:
+      case climate::CLIMATE_FAN_MEDIUM:
+      case climate::CLIMATE_FAN_HIGH:
+        break;
+      default:
+        this->set_fan_mode_(climate::CLIMATE_FAN_AUTO);
+        break;
+    }
   }
 
   if (std::isnan(this->target_temperature)) {

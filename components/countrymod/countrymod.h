@@ -81,6 +81,7 @@ class CountrymodClimate : public climate_ir::ClimateIR {
 
   climate::ClimateMode mode_from_base_(uint8_t mode_base) const;
   uint8_t mode_base_for_transmit_() const;
+  uint8_t fan_speed_for_transmit_() const;
   uint8_t fan_code_for_transmit_() const;
   uint8_t tail_fan_code_for_transmit_() const;
   climate::ClimateFanMode fan_mode_from_code_(uint8_t fan_code) const;
