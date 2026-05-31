@@ -116,6 +116,17 @@ speed 5 fields. Custom fan modes `Speed 1` through `Speed 5` are also exposed.
 The first 32-bit decode uses the protocol's shared code for display speeds
 3/4/5, while the hidden 32-bit tail selects the exact fan speed.
 
+Captured cool-mode fan packets at 72F:
+
+| Fan setting | First packet | Second packet |
+| --- | --- | --- |
+| Auto | `9060001A/0004000C` | `9060001E/00000008` |
+| Speed 1 | `9860001A/0004000C` | `9860001E/00000804` |
+| Speed 2 | `9460001A/0004000C` | `9460001E/0000040C` |
+| Speed 3 | `9C60001A/0004000C` | `9C60001E/00000C02` |
+| Speed 4 | `9C60001A/0004000C` | `9C60001E/0000020A` |
+| Speed 5 | `9C60001A/0004000C` | `9C60001E/00000A06` |
+
 The remote's main `ECO`, `AUTO`, and `TURBO` modes are exposed through standard
 climate presets as `ECO`, `NONE`, and `BOOST`. The optional `eco` and `turbo`
 switches provide direct switch entities for the same protocol state. `BOOST`
