@@ -26,6 +26,17 @@ static constexpr uint8_t ECO_TEMP_CODE = 0x08;
 static constexpr uint8_t FIRST_PACKET_MARKER = 0x58;
 static constexpr uint8_t SECOND_PACKET_MARKER = 0x78;
 
+static constexpr uint32_t COUNTRYMOD_CARRIER_FREQUENCY = 38000;
+static constexpr uint32_t COUNTRYMOD_HEADER_MARK_US = 9000;
+static constexpr uint32_t COUNTRYMOD_HEADER_SPACE_US = 4500;
+static constexpr uint32_t COUNTRYMOD_BIT_MARK_US = 560;
+static constexpr uint32_t COUNTRYMOD_ONE_SPACE_US = 1690;
+static constexpr uint32_t COUNTRYMOD_ZERO_SPACE_US = 520;
+static constexpr uint32_t COUNTRYMOD_FRAME_GAP_US = 25300;
+static constexpr uint8_t COUNTRYMOD_TRAILER_BITS = 0b010;
+static constexpr uint8_t COUNTRYMOD_TRAILER_NBITS = 3;
+static constexpr uint8_t COUNTRYMOD_FRAME_NBITS = 32 + COUNTRYMOD_TRAILER_NBITS;
+
 static constexpr uint32_t LIGHT_COMMAND_FRAME = 0x008844CC;
 static constexpr uint32_t DISPLAY_COMMAND_FRAME = 0x22AA66EE;
 static constexpr uint32_t VIEW_VOLTAGE_COMMAND_FRAME = 0x55DD33BB;
@@ -230,17 +241,17 @@ bool CountrymodClimate::set_airflow(bool airflow_on) {
 
 void CountrymodClimate::send_light_command() {
   ESP_LOGD(TAG, "Sending Countrymod light command: 0x%08" PRIX32, LIGHT_COMMAND_FRAME);
-  this->transmit_lg_frame_(LIGHT_COMMAND_FRAME);
+  this->transmit_countrymod_frame_(LIGHT_COMMAND_FRAME);
 }
 
 void CountrymodClimate::send_display_command() {
   ESP_LOGD(TAG, "Sending Countrymod display command: 0x%08" PRIX32, DISPLAY_COMMAND_FRAME);
-  this->transmit_lg_frame_(DISPLAY_COMMAND_FRAME);
+  this->transmit_countrymod_frame_(DISPLAY_COMMAND_FRAME);
 }
 
 void CountrymodClimate::send_view_voltage_command() {
   ESP_LOGD(TAG, "Sending Countrymod view voltage command: 0x%08" PRIX32, VIEW_VOLTAGE_COMMAND_FRAME);
-  this->transmit_lg_frame_(VIEW_VOLTAGE_COMMAND_FRAME);
+  this->transmit_countrymod_frame_(VIEW_VOLTAGE_COMMAND_FRAME);
 }
 
 void CountrymodClimate::transmit_state() {
@@ -250,9 +261,9 @@ void CountrymodClimate::transmit_state() {
   ESP_LOGD(TAG, "Sending Countrymod frames: 0x%08" PRIX32 " then 0x%08" PRIX32, first_frame, second_frame);
 
   this->cancel_timeout("countrymod-second-frame");
-  this->transmit_lg_frame_(first_frame);
+  this->transmit_countrymod_frame_(first_frame);
   this->set_timeout("countrymod-second-frame", this->inter_frame_delay_ms_, [this, second_frame]() {
-    this->transmit_lg_frame_(second_frame);
+    this->transmit_countrymod_frame_(second_frame);
   });
 }
 
@@ -311,16 +322,28 @@ uint32_t CountrymodClimate::make_frame_(bool second_packet) const {
          uint32_t{rev8_(marker)};
 }
 
-void CountrymodClimate::transmit_lg_frame_(uint32_t frame) {
+void CountrymodClimate::transmit_countrymod_frame_(uint32_t frame) {
   if (this->transmitter_ == nullptr) {
     ESP_LOGW(TAG, "Cannot transmit without a remote transmitter");
     return;
   }
 
-  remote_base::LGData lg_data{};
-  lg_data.data = frame;
-  lg_data.nbits = 32;
-  this->transmit_<remote_base::LGProtocol>(lg_data);
+  auto transmit = this->transmitter_->transmit();
+  this->encode_countrymod_frame_(transmit.get_data(), frame);
+  transmit.perform();
+}
+
+void CountrymodClimate::encode_countrymod_frame_(remote_base::RemoteTransmitData *dst, uint32_t frame) const {
+  dst->set_carrier_frequency(COUNTRYMOD_CARRIER_FREQUENCY);
+  dst->reserve(2 + COUNTRYMOD_FRAME_NBITS * 2u + 2);
+  dst->item(COUNTRYMOD_HEADER_MARK_US, COUNTRYMOD_HEADER_SPACE_US);
+
+  const uint64_t burst = (uint64_t{frame} << COUNTRYMOD_TRAILER_NBITS) | COUNTRYMOD_TRAILER_BITS;
+  for (uint64_t mask = uint64_t{1} << (COUNTRYMOD_FRAME_NBITS - 1); mask != 0; mask >>= 1) {
+    dst->item(COUNTRYMOD_BIT_MARK_US, (burst & mask) != 0 ? COUNTRYMOD_ONE_SPACE_US : COUNTRYMOD_ZERO_SPACE_US);
+  }
+  dst->mark(COUNTRYMOD_BIT_MARK_US);
+  dst->space(COUNTRYMOD_FRAME_GAP_US);
 }
 
 bool CountrymodClimate::apply_lg_frame_(uint32_t frame) {

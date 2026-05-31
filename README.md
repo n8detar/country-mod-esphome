@@ -7,6 +7,11 @@ The protocol is full-state: each update sends two 32-bit LG-style frames. The
 component keeps the current climate state locally, builds both packet variants,
 and transmits them about 110 ms apart.
 
+ESPHome's receiver identifies the first 32 bits as `remote.lg`, but the physical
+remote transmits those bits as a Countrymod burst with a 9 ms / 4.5 ms header
+and a fixed `010` trailer. The component transmits that captured burst shape
+rather than ESPHome's generic LG timing.
+
 ## Example
 
 ```yaml

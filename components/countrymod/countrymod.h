@@ -64,7 +64,8 @@ class CountrymodClimate : public climate_ir::ClimateIR {
   static uint8_t rev8_(uint8_t value);
 
   uint32_t make_frame_(bool second_packet) const;
-  void transmit_lg_frame_(uint32_t frame);
+  void transmit_countrymod_frame_(uint32_t frame);
+  void encode_countrymod_frame_(remote_base::RemoteTransmitData *dst, uint32_t frame) const;
   bool apply_lg_frame_(uint32_t frame);
 
   climate::ClimateMode mode_from_base_(uint8_t mode_base) const;
