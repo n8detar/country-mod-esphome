@@ -42,7 +42,7 @@ climate:
     transmitter_id: ir_tx
     supports_heat: false
     inter_frame_delay: 110ms
-    use_power_bit: false
+    use_power_bit: true
 
 switch:
   - platform: countrymod
@@ -113,9 +113,9 @@ climate presets as `ECO`, `NONE`, and `BOOST`. The optional `eco` and `turbo`
 switches provide direct switch entities for the same protocol state. `BOOST`
 transmits the turbo flag with the captured max-fan IR fields.
 
-`use_power_bit: false` matches handheld captures where active climate frames
-decode as `0x8060...` rather than `0x9060...`. If your remote captures show the
-`0x08` control bit set only when the unit is on, set `use_power_bit: true`.
+`use_power_bit: true` matches handheld captures where ON climate frames decode
+as `0x9060...` and matching OFF frames decode as `0x8060...`. If your remote
+never uses the `0x08` control bit, set `use_power_bit: false`.
 
 Protocol bit `0x40` is exposed as `negative_ion`, matching the manual. The older
 `feature` switch type remains accepted as an alias. `feature_as_swing` is still

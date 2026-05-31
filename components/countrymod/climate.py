@@ -15,7 +15,7 @@ CONFIG_SCHEMA = climate_ir.climate_ir_with_receiver_schema(CountrymodClimate).ex
     {
         cv.Optional(CONF_FEATURE_AS_SWING, default=False): cv.boolean,
         cv.Optional(CONF_INTER_FRAME_DELAY, default="110ms"): cv.positive_time_period_milliseconds,
-        cv.Optional(CONF_USE_POWER_BIT, default=False): cv.boolean,
+        cv.Optional(CONF_USE_POWER_BIT, default=True): cv.boolean,
     }
 )
 
