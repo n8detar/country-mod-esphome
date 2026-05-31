@@ -3,14 +3,14 @@
 ESPHome external component for the Countrymod RV AC IR protocol decoded from
 `remote.lg` receiver captures.
 
-The protocol is full-state: each update sends two 32-bit LG-style frames. The
-component keeps the current climate state locally, builds both packet variants,
-and transmits them about 110 ms apart.
+The protocol is full-state: each update sends two state packets. The component
+keeps the current climate state locally, builds both packet variants, and
+transmits them about 110 ms apart.
 
 ESPHome's receiver identifies the first 32 bits as `remote.lg`, but the physical
-remote transmits those bits as a Countrymod burst with a 9 ms / 4.5 ms header
-and a fixed `010` trailer. The component transmits that captured burst shape
-rather than ESPHome's generic LG timing.
+remote transmits those bits as a Countrymod burst with a 9 ms / 4.5 ms header,
+a fixed `010` separator, a second 32-bit tail block, and the captured
+Countrymod timing rather than ESPHome's generic LG timing.
 
 ## Example
 
@@ -82,11 +82,13 @@ button:
 Supported climate modes are `OFF`, `COOL`, `HEAT`, and `FAN_ONLY`. Set
 `supports_heat: false` to hide heat mode and ignore received heat frames on
 cool-only units. Supported fan modes are `AUTO`, `LOW`, `MEDIUM`, and `HIGH`,
-where `HIGH` maps to the protocol's shared fan code for display speeds 3/4/5.
+where `HIGH` uses the remote's highest captured fan-speed tail while the first
+32-bit decode uses the protocol's shared code for display speeds 3/4/5.
 
 The remote's main `ECO`, `AUTO`, and `TURBO` modes are exposed through standard
 climate presets as `ECO`, `NONE`, and `BOOST`. The optional `eco` and `turbo`
-switches provide direct switch entities for the same protocol state.
+switches provide direct switch entities for the same protocol state. `BOOST`
+transmits the turbo flag with the captured max-fan IR fields.
 
 Protocol bit `0x40` is exposed as `negative_ion`, matching the manual. The older
 `feature` switch type remains accepted as an alias. `feature_as_swing` is still

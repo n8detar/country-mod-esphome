@@ -64,13 +64,19 @@ class CountrymodClimate : public climate_ir::ClimateIR {
   static uint8_t rev8_(uint8_t value);
 
   uint32_t make_frame_(bool second_packet) const;
+  uint32_t make_tail_(bool second_packet) const;
+  void build_state_(bool second_packet, uint8_t *state) const;
+  uint8_t checksum_for_state_(const uint8_t *state) const;
   void transmit_countrymod_frame_(uint32_t frame);
-  void encode_countrymod_frame_(remote_base::RemoteTransmitData *dst, uint32_t frame) const;
+  void transmit_countrymod_climate_frame_(uint32_t frame, uint32_t tail);
+  void encode_countrymod_frame_(remote_base::RemoteTransmitData *dst, uint32_t frame, uint32_t gap_us) const;
+  void encode_countrymod_tail_(remote_base::RemoteTransmitData *dst, uint32_t tail) const;
   bool apply_lg_frame_(uint32_t frame);
 
   climate::ClimateMode mode_from_base_(uint8_t mode_base) const;
   uint8_t mode_base_for_transmit_() const;
   uint8_t fan_code_for_transmit_() const;
+  uint8_t tail_fan_code_for_transmit_() const;
   climate::ClimateFanMode fan_mode_from_code_(uint8_t fan_code) const;
 
   void publish_option_switches_();

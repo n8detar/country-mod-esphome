@@ -32,10 +32,13 @@ static constexpr uint32_t COUNTRYMOD_HEADER_SPACE_US = 4500;
 static constexpr uint32_t COUNTRYMOD_BIT_MARK_US = 560;
 static constexpr uint32_t COUNTRYMOD_ONE_SPACE_US = 1690;
 static constexpr uint32_t COUNTRYMOD_ZERO_SPACE_US = 520;
+static constexpr uint32_t COUNTRYMOD_MESSAGE_SPACE_US = 20000;
 static constexpr uint32_t COUNTRYMOD_FRAME_GAP_US = 25300;
 static constexpr uint8_t COUNTRYMOD_TRAILER_BITS = 0b010;
 static constexpr uint8_t COUNTRYMOD_TRAILER_NBITS = 3;
 static constexpr uint8_t COUNTRYMOD_FRAME_NBITS = 32 + COUNTRYMOD_TRAILER_NBITS;
+static constexpr uint8_t COUNTRYMOD_TAIL_NBITS = 32;
+static constexpr uint8_t COUNTRYMOD_ECO_SECOND_TAIL_LOW_NIBBLE = 0x03;
 
 static constexpr uint32_t LIGHT_COMMAND_FRAME = 0x008844CC;
 static constexpr uint32_t DISPLAY_COMMAND_FRAME = 0x22AA66EE;
@@ -257,13 +260,17 @@ void CountrymodClimate::send_view_voltage_command() {
 void CountrymodClimate::transmit_state() {
   const uint32_t first_frame = this->make_frame_(false);
   const uint32_t second_frame = this->make_frame_(true);
+  const uint32_t first_tail = this->make_tail_(false);
+  const uint32_t second_tail = this->make_tail_(true);
 
-  ESP_LOGD(TAG, "Sending Countrymod frames: 0x%08" PRIX32 " then 0x%08" PRIX32, first_frame, second_frame);
+  ESP_LOGD(TAG,
+           "Sending Countrymod climate packets: 0x%08" PRIX32 "/0x%08" PRIX32 " then 0x%08" PRIX32 "/0x%08" PRIX32,
+           first_frame, first_tail, second_frame, second_tail);
 
   this->cancel_timeout("countrymod-second-frame");
-  this->transmit_countrymod_frame_(first_frame);
-  this->set_timeout("countrymod-second-frame", this->inter_frame_delay_ms_, [this, second_frame]() {
-    this->transmit_countrymod_frame_(second_frame);
+  this->transmit_countrymod_climate_frame_(first_frame, first_tail);
+  this->set_timeout("countrymod-second-frame", this->inter_frame_delay_ms_, [this, second_frame, second_tail]() {
+    this->transmit_countrymod_climate_frame_(second_frame, second_tail);
   });
 }
 
@@ -295,6 +302,22 @@ uint8_t CountrymodClimate::rev8_(uint8_t value) {
 }
 
 uint32_t CountrymodClimate::make_frame_(bool second_packet) const {
+  uint8_t state[8];
+  this->build_state_(second_packet, state);
+
+  return (uint32_t{rev8_(state[0])} << 24) | (uint32_t{rev8_(state[1])} << 16) |
+         (uint32_t{rev8_(state[2])} << 8) | uint32_t{rev8_(state[3])};
+}
+
+uint32_t CountrymodClimate::make_tail_(bool second_packet) const {
+  uint8_t state[8];
+  this->build_state_(second_packet, state);
+
+  return (uint32_t{rev8_(state[4])} << 24) | (uint32_t{rev8_(state[5])} << 16) |
+         (uint32_t{rev8_(state[6])} << 8) | uint32_t{rev8_(state[7])};
+}
+
+void CountrymodClimate::build_state_(bool second_packet, uint8_t *state) const {
   uint8_t control = this->mode_base_for_transmit_();
   if (this->mode != climate::CLIMATE_MODE_OFF) {
     control |= POWER_BIT;
@@ -318,8 +341,27 @@ uint32_t CountrymodClimate::make_frame_(bool second_packet) const {
   }
   const uint8_t marker = second_packet ? SECOND_PACKET_MARKER : FIRST_PACKET_MARKER;
 
-  return (uint32_t{rev8_(control)} << 24) | (uint32_t{rev8_(temp_code)} << 16) | (uint32_t{rev8_(flags)} << 8) |
-         uint32_t{rev8_(marker)};
+  state[0] = control;
+  state[1] = temp_code;
+  state[2] = flags;
+  state[3] = marker;
+  state[4] = 0x00;
+  state[5] = second_packet ? 0x00 : 0x20;
+  state[6] = second_packet ? (this->tail_fan_code_for_transmit_() << 4) : 0x00;
+  state[7] = second_packet && this->eco_on_ ? COUNTRYMOD_ECO_SECOND_TAIL_LOW_NIBBLE : 0x00;
+  state[7] = (this->checksum_for_state_(state) << 4) | (state[7] & 0x0F);
+}
+
+uint8_t CountrymodClimate::checksum_for_state_(const uint8_t *state) const {
+  uint8_t checksum = 0x0A;
+  checksum += state[0] & 0x0F;
+  checksum += state[1] & 0x0F;
+  checksum += state[2] & 0x0F;
+  checksum += state[3] & 0x0F;
+  checksum += (state[5] & 0xF0) >> 4;
+  checksum += (state[6] & 0xF0) >> 4;
+  checksum += (state[7] & 0xF0) >> 4;
+  return checksum & 0x0F;
 }
 
 void CountrymodClimate::transmit_countrymod_frame_(uint32_t frame) {
@@ -329,11 +371,26 @@ void CountrymodClimate::transmit_countrymod_frame_(uint32_t frame) {
   }
 
   auto transmit = this->transmitter_->transmit();
-  this->encode_countrymod_frame_(transmit.get_data(), frame);
+  this->encode_countrymod_frame_(transmit.get_data(), frame, COUNTRYMOD_FRAME_GAP_US);
   transmit.perform();
 }
 
-void CountrymodClimate::encode_countrymod_frame_(remote_base::RemoteTransmitData *dst, uint32_t frame) const {
+void CountrymodClimate::transmit_countrymod_climate_frame_(uint32_t frame, uint32_t tail) {
+  if (this->transmitter_ == nullptr) {
+    ESP_LOGW(TAG, "Cannot transmit without a remote transmitter");
+    return;
+  }
+
+  auto transmit = this->transmitter_->transmit();
+  auto *data = transmit.get_data();
+  data->reserve(2 + COUNTRYMOD_FRAME_NBITS * 2u + 2 + COUNTRYMOD_TAIL_NBITS * 2u + 2);
+  this->encode_countrymod_frame_(data, frame, COUNTRYMOD_MESSAGE_SPACE_US);
+  this->encode_countrymod_tail_(data, tail);
+  transmit.perform();
+}
+
+void CountrymodClimate::encode_countrymod_frame_(remote_base::RemoteTransmitData *dst, uint32_t frame,
+                                                 uint32_t gap_us) const {
   dst->set_carrier_frequency(COUNTRYMOD_CARRIER_FREQUENCY);
   dst->reserve(2 + COUNTRYMOD_FRAME_NBITS * 2u + 2);
   dst->item(COUNTRYMOD_HEADER_MARK_US, COUNTRYMOD_HEADER_SPACE_US);
@@ -341,6 +398,14 @@ void CountrymodClimate::encode_countrymod_frame_(remote_base::RemoteTransmitData
   const uint64_t burst = (uint64_t{frame} << COUNTRYMOD_TRAILER_NBITS) | COUNTRYMOD_TRAILER_BITS;
   for (uint64_t mask = uint64_t{1} << (COUNTRYMOD_FRAME_NBITS - 1); mask != 0; mask >>= 1) {
     dst->item(COUNTRYMOD_BIT_MARK_US, (burst & mask) != 0 ? COUNTRYMOD_ONE_SPACE_US : COUNTRYMOD_ZERO_SPACE_US);
+  }
+  dst->mark(COUNTRYMOD_BIT_MARK_US);
+  dst->space(gap_us);
+}
+
+void CountrymodClimate::encode_countrymod_tail_(remote_base::RemoteTransmitData *dst, uint32_t tail) const {
+  for (uint32_t mask = uint32_t{1} << (COUNTRYMOD_TAIL_NBITS - 1); mask != 0; mask >>= 1) {
+    dst->item(COUNTRYMOD_BIT_MARK_US, (tail & mask) != 0 ? COUNTRYMOD_ONE_SPACE_US : COUNTRYMOD_ZERO_SPACE_US);
   }
   dst->mark(COUNTRYMOD_BIT_MARK_US);
   dst->space(COUNTRYMOD_FRAME_GAP_US);
@@ -427,6 +492,9 @@ uint8_t CountrymodClimate::mode_base_for_transmit_() const {
 }
 
 uint8_t CountrymodClimate::fan_code_for_transmit_() const {
+  if (this->turbo_on_) {
+    return 3;
+  }
   if (!this->fan_mode.has_value()) {
     return 0;
   }
@@ -437,6 +505,26 @@ uint8_t CountrymodClimate::fan_code_for_transmit_() const {
       return 2;
     case climate::CLIMATE_FAN_HIGH:
       return 3;
+    case climate::CLIMATE_FAN_AUTO:
+    default:
+      return 0;
+  }
+}
+
+uint8_t CountrymodClimate::tail_fan_code_for_transmit_() const {
+  if (this->turbo_on_) {
+    return 5;
+  }
+  if (!this->fan_mode.has_value()) {
+    return 0;
+  }
+  switch (*this->fan_mode) {
+    case climate::CLIMATE_FAN_LOW:
+      return 1;
+    case climate::CLIMATE_FAN_MEDIUM:
+      return 2;
+    case climate::CLIMATE_FAN_HIGH:
+      return 5;
     case climate::CLIMATE_FAN_AUTO:
     default:
       return 0;
