@@ -3,6 +3,8 @@
 ESPHome external component for the Countrymod RV AC IR protocol decoded from
 `remote.lg` receiver captures.
 
+This project is entirely vibe-coded and provided as-is. Use it at your own risk.
+
 The protocol is full-state: each update sends two state packets. The component
 keeps the current climate state locally, builds both packet variants, and
 transmits the pair as one raw IR sequence.
