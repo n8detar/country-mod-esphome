@@ -3,7 +3,7 @@ from esphome.components import button
 import esphome.config_validation as cv
 
 from .climate import CountrymodClimate, countrymod_ns
-from .const import CONF_COUNTRYMOD_ID, CONF_TYPE, TYPE_DISPLAY, TYPE_LIGHT, TYPE_ZIGZAG
+from .const import CONF_COUNTRYMOD_ID, CONF_TYPE, TYPE_DISPLAY, TYPE_LIGHT, TYPE_VIEW_VOLTAGE, TYPE_ZIGZAG
 
 CountrymodButton = countrymod_ns.class_(
     "CountrymodButton", button.Button, cg.Parented.template(CountrymodClimate)
@@ -13,7 +13,8 @@ CountrymodButtonKind = countrymod_ns.enum("CountrymodButtonKind")
 BUTTON_TYPES = {
     TYPE_DISPLAY: CountrymodButtonKind.COUNTRYMOD_BUTTON_DISPLAY,
     TYPE_LIGHT: CountrymodButtonKind.COUNTRYMOD_BUTTON_LIGHT,
-    TYPE_ZIGZAG: CountrymodButtonKind.COUNTRYMOD_BUTTON_ZIGZAG,
+    TYPE_VIEW_VOLTAGE: CountrymodButtonKind.COUNTRYMOD_BUTTON_VIEW_VOLTAGE,
+    TYPE_ZIGZAG: CountrymodButtonKind.COUNTRYMOD_BUTTON_VIEW_VOLTAGE,
 }
 
 CONFIG_SCHEMA = button.button_schema(CountrymodButton).extend(

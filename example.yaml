@@ -36,7 +36,7 @@ climate:
     name: RV AC
     transmitter_id: ir_tx
     # receiver_id: ir_rx
-    feature_as_swing: false
+    supports_heat: false
     inter_frame_delay: 110ms
 
 switch:
@@ -52,8 +52,9 @@ switch:
 
   - platform: countrymod
     countrymod_id: rv_ac
-    type: feature
-    name: RV AC Feature Bit
+    type: negative_ion
+    name: RV AC Negative Ion
+    disabled_by_default: true
 
   - platform: countrymod
     countrymod_id: rv_ac
@@ -62,15 +63,11 @@ switch:
 
   - platform: countrymod
     countrymod_id: rv_ac
-    type: airflow
-    name: RV AC Airflow Bit
+    type: auxiliary
+    name: RV AC Auxiliary Function
+    disabled_by_default: true
 
 button:
-  - platform: countrymod
-    countrymod_id: rv_ac
-    type: light
-    name: RV AC Light
-
   - platform: countrymod
     countrymod_id: rv_ac
     type: display
@@ -78,5 +75,11 @@ button:
 
   - platform: countrymod
     countrymod_id: rv_ac
-    type: zigzag
-    name: RV AC Zigzag
+    type: view_voltage
+    name: RV AC View Voltage
+
+  - platform: countrymod
+    countrymod_id: rv_ac
+    type: light
+    name: RV AC Light
+    disabled_by_default: true

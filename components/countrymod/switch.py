@@ -7,8 +7,10 @@ from .const import (
     CONF_COUNTRYMOD_ID,
     CONF_TYPE,
     TYPE_AIRFLOW,
+    TYPE_AUXILIARY,
     TYPE_ECO,
     TYPE_FEATURE,
+    TYPE_NEGATIVE_ION,
     TYPE_NIGHT,
     TYPE_TURBO,
 )
@@ -20,10 +22,12 @@ CountrymodSwitchKind = countrymod_ns.enum("CountrymodSwitchKind")
 
 SWITCH_TYPES = {
     TYPE_AIRFLOW: CountrymodSwitchKind.COUNTRYMOD_SWITCH_AIRFLOW,
+    TYPE_AUXILIARY: CountrymodSwitchKind.COUNTRYMOD_SWITCH_AIRFLOW,
     TYPE_ECO: CountrymodSwitchKind.COUNTRYMOD_SWITCH_ECO,
     TYPE_TURBO: CountrymodSwitchKind.COUNTRYMOD_SWITCH_TURBO,
     TYPE_NIGHT: CountrymodSwitchKind.COUNTRYMOD_SWITCH_NIGHT,
-    TYPE_FEATURE: CountrymodSwitchKind.COUNTRYMOD_SWITCH_FEATURE,
+    TYPE_FEATURE: CountrymodSwitchKind.COUNTRYMOD_SWITCH_NEGATIVE_ION,
+    TYPE_NEGATIVE_ION: CountrymodSwitchKind.COUNTRYMOD_SWITCH_NEGATIVE_ION,
 }
 
 CONFIG_SCHEMA = switch.switch_schema(
@@ -45,9 +49,11 @@ async def to_code(config):
 
     setter = {
         TYPE_AIRFLOW: "set_airflow_switch",
+        TYPE_AUXILIARY: "set_airflow_switch",
         TYPE_ECO: "set_eco_switch",
         TYPE_TURBO: "set_turbo_switch",
         TYPE_NIGHT: "set_night_switch",
-        TYPE_FEATURE: "set_feature_switch",
+        TYPE_FEATURE: "set_negative_ion_switch",
+        TYPE_NEGATIVE_ION: "set_negative_ion_switch",
     }[config[CONF_TYPE]]
     cg.add(getattr(parent, setter)(var))

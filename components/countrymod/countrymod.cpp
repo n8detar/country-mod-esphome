@@ -17,7 +17,7 @@ static constexpr uint8_t MODE_BASE_FAN = 0x03;
 static constexpr uint8_t MODE_BASE_HEAT = 0x04;
 
 static constexpr uint8_t POWER_BIT = 0x08;
-static constexpr uint8_t FEATURE_BIT = 0x40;
+static constexpr uint8_t NEGATIVE_ION_BIT = 0x40;
 static constexpr uint8_t NIGHT_BIT = 0x80;
 static constexpr uint8_t TURBO_FLAG = 0x10;
 static constexpr uint8_t AIRFLOW_FLAG = 0x80;
@@ -28,7 +28,7 @@ static constexpr uint8_t SECOND_PACKET_MARKER = 0x78;
 
 static constexpr uint32_t LIGHT_COMMAND_FRAME = 0x008844CC;
 static constexpr uint32_t DISPLAY_COMMAND_FRAME = 0x22AA66EE;
-static constexpr uint32_t ZIGZAG_COMMAND_FRAME = 0x55DD33BB;
+static constexpr uint32_t VIEW_VOLTAGE_COMMAND_FRAME = 0x55DD33BB;
 
 void CountrymodClimate::setup() {
   climate_ir::ClimateIR::setup();
@@ -40,10 +40,12 @@ void CountrymodClimate::setup() {
 void CountrymodClimate::dump_config() {
   LOG_CLIMATE("", "Countrymod Climate", this);
   ESP_LOGCONFIG(TAG, "  Inter-frame delay: %" PRIu32 " ms", this->inter_frame_delay_ms_);
-  ESP_LOGCONFIG(TAG, "  Feature bit exposed as swing: %s", YESNO(this->feature_as_swing_));
+  if (this->feature_as_swing_) {
+    ESP_LOGW(TAG, "  feature_as_swing is deprecated and ignored; use the negative_ion switch instead");
+  }
   LOG_SWITCH("  ", "Turbo Switch", this->turbo_switch_);
   LOG_SWITCH("  ", "Night Switch", this->night_switch_);
-  LOG_SWITCH("  ", "Feature Switch", this->feature_switch_);
+  LOG_SWITCH("  ", "Negative Ion Switch", this->negative_ion_switch_);
   LOG_SWITCH("  ", "Eco Switch", this->eco_switch_);
   LOG_SWITCH("  ", "Airflow Switch", this->airflow_switch_);
 }
@@ -66,9 +68,6 @@ climate::ClimateTraits CountrymodClimate::traits() {
   }
   traits.set_supported_fan_modes({climate::CLIMATE_FAN_AUTO, climate::CLIMATE_FAN_LOW, climate::CLIMATE_FAN_MEDIUM,
                                   climate::CLIMATE_FAN_HIGH});
-  if (this->feature_as_swing_) {
-    traits.set_supported_swing_modes({climate::CLIMATE_SWING_OFF, climate::CLIMATE_SWING_VERTICAL});
-  }
   traits.set_supported_presets(
       {climate::CLIMATE_PRESET_NONE, climate::CLIMATE_PRESET_ECO, climate::CLIMATE_PRESET_BOOST});
   traits.set_visual_min_temperature(16.0f);
@@ -136,11 +135,6 @@ void CountrymodClimate::control(const climate::ClimateCall &call) {
     }
   }
 
-  if (this->feature_as_swing_ && call.get_swing_mode().has_value()) {
-    this->feature_on_ = *call.get_swing_mode() != climate::CLIMATE_SWING_OFF;
-    this->swing_mode = this->feature_on_ ? climate::CLIMATE_SWING_VERTICAL : climate::CLIMATE_SWING_OFF;
-  }
-
   if (preset_requested) {
     switch (*call.get_preset()) {
       case climate::CLIMATE_PRESET_ECO:
@@ -197,11 +191,8 @@ bool CountrymodClimate::set_night(bool night_on) {
   return true;
 }
 
-bool CountrymodClimate::set_feature(bool feature_on) {
-  this->feature_on_ = feature_on;
-  if (this->feature_as_swing_) {
-    this->swing_mode = this->feature_on_ ? climate::CLIMATE_SWING_VERTICAL : climate::CLIMATE_SWING_OFF;
-  }
+bool CountrymodClimate::set_negative_ion(bool negative_ion_on) {
+  this->negative_ion_on_ = negative_ion_on;
   this->transmit_state();
   this->publish_state();
   this->publish_option_switches_();
@@ -247,9 +238,9 @@ void CountrymodClimate::send_display_command() {
   this->transmit_lg_frame_(DISPLAY_COMMAND_FRAME);
 }
 
-void CountrymodClimate::send_zigzag_command() {
-  ESP_LOGD(TAG, "Sending Countrymod zigzag command: 0x%08" PRIX32, ZIGZAG_COMMAND_FRAME);
-  this->transmit_lg_frame_(ZIGZAG_COMMAND_FRAME);
+void CountrymodClimate::send_view_voltage_command() {
+  ESP_LOGD(TAG, "Sending Countrymod view voltage command: 0x%08" PRIX32, VIEW_VOLTAGE_COMMAND_FRAME);
+  this->transmit_lg_frame_(VIEW_VOLTAGE_COMMAND_FRAME);
 }
 
 void CountrymodClimate::transmit_state() {
@@ -278,8 +269,8 @@ bool CountrymodClimate::on_receive(remote_base::RemoteReceiveData data) {
     ESP_LOGD(TAG, "Received Countrymod display command: 0x%08" PRIX32, decoded->data);
     return true;
   }
-  if (decoded->data == ZIGZAG_COMMAND_FRAME) {
-    ESP_LOGD(TAG, "Received Countrymod zigzag command: 0x%08" PRIX32, decoded->data);
+  if (decoded->data == VIEW_VOLTAGE_COMMAND_FRAME) {
+    ESP_LOGD(TAG, "Received Countrymod view voltage command: 0x%08" PRIX32, decoded->data);
     return true;
   }
   return this->apply_lg_frame_(decoded->data);
@@ -298,8 +289,8 @@ uint32_t CountrymodClimate::make_frame_(bool second_packet) const {
     control |= POWER_BIT;
   }
   control |= (this->fan_code_for_transmit_() & 0x03) << 4;
-  if (this->feature_on_) {
-    control |= FEATURE_BIT;
+  if (this->negative_ion_on_) {
+    control |= NEGATIVE_ION_BIT;
   }
   if (this->night_on_) {
     control |= NIGHT_BIT;
@@ -349,6 +340,12 @@ bool CountrymodClimate::apply_lg_frame_(uint32_t frame) {
     ESP_LOGV(TAG, "Ignoring Countrymod frame with unknown mode base 0x%02X", mode_base);
     return false;
   }
+  if ((decoded_mode == climate::CLIMATE_MODE_COOL && !this->supports_cool_) ||
+      (decoded_mode == climate::CLIMATE_MODE_HEAT && !this->supports_heat_)) {
+    ESP_LOGV(TAG, "Ignoring Countrymod frame with disabled mode %s",
+             LOG_STR_ARG(climate::climate_mode_to_string(decoded_mode)));
+    return false;
+  }
 
   if ((control & POWER_BIT) != 0) {
     this->mode = decoded_mode;
@@ -362,14 +359,11 @@ bool CountrymodClimate::apply_lg_frame_(uint32_t frame) {
   if (!decoded_eco) {
     this->target_temperature = clamp<float>(static_cast<float>(temp_code) + 16.0f, 16.0f, 30.0f);
   }
-  this->feature_on_ = (control & FEATURE_BIT) != 0;
+  this->negative_ion_on_ = (control & NEGATIVE_ION_BIT) != 0;
   this->night_on_ = (control & NIGHT_BIT) != 0;
   this->turbo_on_ = (flags & TURBO_FLAG) != 0;
   this->eco_on_ = decoded_eco && !this->turbo_on_;
   this->airflow_on_ = (flags & AIRFLOW_FLAG) != 0;
-  if (this->feature_as_swing_) {
-    this->swing_mode = this->feature_on_ ? climate::CLIMATE_SWING_VERTICAL : climate::CLIMATE_SWING_OFF;
-  }
 
   this->sanitize_state_();
   this->update_action_();
@@ -443,7 +437,7 @@ climate::ClimateFanMode CountrymodClimate::fan_mode_from_code_(uint8_t fan_code)
 void CountrymodClimate::publish_option_switches_() {
   this->publish_option_switch_(this->turbo_switch_, this->turbo_on_);
   this->publish_option_switch_(this->night_switch_, this->night_on_);
-  this->publish_option_switch_(this->feature_switch_, this->feature_on_);
+  this->publish_option_switch_(this->negative_ion_switch_, this->negative_ion_on_);
   this->publish_option_switch_(this->eco_switch_, this->eco_on_);
   this->publish_option_switch_(this->airflow_switch_, this->airflow_on_);
 }
@@ -540,11 +534,7 @@ void CountrymodClimate::sanitize_state_() {
     this->target_temperature = clamp<float>(std::round(this->target_temperature), 16.0f, 30.0f);
   }
 
-  if (this->feature_as_swing_) {
-    this->swing_mode = this->feature_on_ ? climate::CLIMATE_SWING_VERTICAL : climate::CLIMATE_SWING_OFF;
-  } else {
-    this->swing_mode = climate::CLIMATE_SWING_OFF;
-  }
+  this->swing_mode = climate::CLIMATE_SWING_OFF;
 
   if (this->eco_on_ && !this->supports_cool_) {
     this->eco_on_ = false;
@@ -572,8 +562,8 @@ void CountrymodButton::press_action() {
     case COUNTRYMOD_BUTTON_DISPLAY:
       this->get_parent()->send_display_command();
       break;
-    case COUNTRYMOD_BUTTON_ZIGZAG:
-      this->get_parent()->send_zigzag_command();
+    case COUNTRYMOD_BUTTON_VIEW_VOLTAGE:
+      this->get_parent()->send_view_voltage_command();
       break;
   }
 }
@@ -592,8 +582,8 @@ void CountrymodSwitch::write_state(bool state) {
     case COUNTRYMOD_SWITCH_NIGHT:
       ok = this->get_parent()->set_night(state);
       break;
-    case COUNTRYMOD_SWITCH_FEATURE:
-      ok = this->get_parent()->set_feature(state);
+    case COUNTRYMOD_SWITCH_NEGATIVE_ION:
+      ok = this->get_parent()->set_negative_ion(state);
       break;
     case COUNTRYMOD_SWITCH_ECO:
       ok = this->get_parent()->set_eco(state);
