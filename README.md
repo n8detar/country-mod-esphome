@@ -15,6 +15,13 @@ Countrymod timing rather than ESPHome's generic LG timing.
 ## Example
 
 ```yaml
+esphome:
+  name: countrymod-rv-ac
+  friendly_name: Countrymod RV AC
+  devices:
+    - id: rv_ac_device
+      name: RV AC
+
 external_components:
   - source: github://n8detar/country-mod-esphome@main
     components: [countrymod]
@@ -28,7 +35,8 @@ remote_transmitter:
 climate:
   - platform: countrymod
     id: rv_ac
-    name: RV AC
+    name: Climate
+    device_id: rv_ac_device
     transmitter_id: ir_tx
     supports_heat: false
     inter_frame_delay: 110ms
@@ -37,47 +45,59 @@ switch:
   - platform: countrymod
     countrymod_id: rv_ac
     type: turbo
-    name: RV AC Turbo
+    name: Turbo
+    device_id: rv_ac_device
 
   - platform: countrymod
     countrymod_id: rv_ac
     type: night
-    name: RV AC Night
+    name: Night
+    device_id: rv_ac_device
 
   - platform: countrymod
     countrymod_id: rv_ac
     type: negative_ion
-    name: RV AC Negative Ion
+    name: Negative Ion
+    device_id: rv_ac_device
     disabled_by_default: true
 
   - platform: countrymod
     countrymod_id: rv_ac
     type: eco
-    name: RV AC Eco
+    name: Eco
+    device_id: rv_ac_device
 
   - platform: countrymod
     countrymod_id: rv_ac
     type: auxiliary
-    name: RV AC Auxiliary Function
+    name: Auxiliary Function
+    device_id: rv_ac_device
     disabled_by_default: true
 
 button:
   - platform: countrymod
     countrymod_id: rv_ac
     type: display
-    name: RV AC Display
+    name: Display
+    device_id: rv_ac_device
 
   - platform: countrymod
     countrymod_id: rv_ac
     type: view_voltage
-    name: RV AC View Voltage
+    name: View Voltage
+    device_id: rv_ac_device
 
   - platform: countrymod
     countrymod_id: rv_ac
     type: light
-    name: RV AC Light
+    name: Light
+    device_id: rv_ac_device
     disabled_by_default: true
 ```
+
+The `device_id` entries are optional, but when present they put the climate,
+switches, and buttons under the `RV AC` sub-device in Home Assistant instead of
+the ESP controller device.
 
 Supported climate modes are `OFF`, `COOL`, `HEAT`, and `FAN_ONLY`. Set
 `supports_heat: false` to hide heat mode and ignore received heat frames on

@@ -1,6 +1,9 @@
 esphome:
   name: countrymod-rv-ac
   friendly_name: Countrymod RV AC
+  devices:
+    - id: rv_ac_device
+      name: RV AC
 
 esp32:
   board: esp32dev
@@ -33,7 +36,8 @@ remote_transmitter:
 climate:
   - platform: countrymod
     id: rv_ac
-    name: RV AC
+    name: Climate
+    device_id: rv_ac_device
     transmitter_id: ir_tx
     # receiver_id: ir_rx
     supports_heat: false
@@ -43,43 +47,51 @@ switch:
   - platform: countrymod
     countrymod_id: rv_ac
     type: turbo
-    name: RV AC Turbo
+    name: Turbo
+    device_id: rv_ac_device
 
   - platform: countrymod
     countrymod_id: rv_ac
     type: night
-    name: RV AC Night
+    name: Night
+    device_id: rv_ac_device
 
   - platform: countrymod
     countrymod_id: rv_ac
     type: negative_ion
-    name: RV AC Negative Ion
+    name: Negative Ion
+    device_id: rv_ac_device
     disabled_by_default: true
 
   - platform: countrymod
     countrymod_id: rv_ac
     type: eco
-    name: RV AC Eco
+    name: Eco
+    device_id: rv_ac_device
 
   - platform: countrymod
     countrymod_id: rv_ac
     type: auxiliary
-    name: RV AC Auxiliary Function
+    name: Auxiliary Function
+    device_id: rv_ac_device
     disabled_by_default: true
 
 button:
   - platform: countrymod
     countrymod_id: rv_ac
     type: display
-    name: RV AC Display
+    name: Display
+    device_id: rv_ac_device
 
   - platform: countrymod
     countrymod_id: rv_ac
     type: view_voltage
-    name: RV AC View Voltage
+    name: View Voltage
+    device_id: rv_ac_device
 
   - platform: countrymod
     countrymod_id: rv_ac
     type: light
-    name: RV AC Light
+    name: Light
+    device_id: rv_ac_device
     disabled_by_default: true
