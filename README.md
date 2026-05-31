@@ -11,9 +11,7 @@ and transmits them about 110 ms apart.
 
 ```yaml
 external_components:
-  - source:
-      type: local
-      path: components
+  - source: github://n8detar/country-mod-esphome@main
     components: [countrymod]
 
 remote_transmitter:

@@ -10,9 +10,7 @@ esp32:
 logger:
 
 external_components:
-  - source:
-      type: local
-      path: components
+  - source: github://n8detar/country-mod-esphome@main
     components: [countrymod]
 
 remote_transmitter:
