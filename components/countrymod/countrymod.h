@@ -36,6 +36,7 @@ class CountrymodClimate : public climate_ir::ClimateIR {
 
   void set_feature_as_swing(bool feature_as_swing) { this->feature_as_swing_ = feature_as_swing; }
   void set_inter_frame_delay(uint32_t inter_frame_delay_ms) { this->inter_frame_delay_ms_ = inter_frame_delay_ms; }
+  void set_use_power_bit(bool use_power_bit) { this->use_power_bit_ = use_power_bit; }
 
   bool set_turbo(bool turbo_on);
   bool set_night(bool night_on);
@@ -97,6 +98,7 @@ class CountrymodClimate : public climate_ir::ClimateIR {
   bool eco_on_{false};
   bool airflow_on_{false};
   bool feature_as_swing_{false};
+  bool use_power_bit_{false};
   uint32_t inter_frame_delay_ms_{110};
 
   switch_::Switch *turbo_switch_{nullptr};

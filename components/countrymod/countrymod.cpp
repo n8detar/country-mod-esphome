@@ -54,6 +54,7 @@ void CountrymodClimate::setup() {
 void CountrymodClimate::dump_config() {
   LOG_CLIMATE("", "Countrymod Climate", this);
   ESP_LOGCONFIG(TAG, "  Inter-frame delay: %" PRIu32 " ms", this->inter_frame_delay_ms_);
+  ESP_LOGCONFIG(TAG, "  Use power bit: %s", this->use_power_bit_ ? "yes" : "no");
   if (this->feature_as_swing_) {
     ESP_LOGW(TAG, "  feature_as_swing is deprecated and ignored; use the negative_ion switch instead");
   }
@@ -316,7 +317,7 @@ uint32_t CountrymodClimate::make_tail_(bool second_packet) const {
 
 void CountrymodClimate::build_state_(bool second_packet, uint8_t *state) const {
   uint8_t control = this->mode_base_for_transmit_();
-  if (this->mode != climate::CLIMATE_MODE_OFF) {
+  if (this->use_power_bit_ && this->mode != climate::CLIMATE_MODE_OFF) {
     control |= POWER_BIT;
   }
   control |= (this->fan_code_for_transmit_() & 0x03) << 4;
@@ -462,7 +463,7 @@ bool CountrymodClimate::apply_lg_frame_(uint32_t frame) {
     return false;
   }
 
-  if ((control & POWER_BIT) != 0) {
+  if (!this->use_power_bit_ || (control & POWER_BIT) != 0) {
     this->mode = decoded_mode;
     this->last_on_mode_ = decoded_mode;
   } else {

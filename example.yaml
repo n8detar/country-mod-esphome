@@ -42,6 +42,7 @@ climate:
     # receiver_id: ir_rx
     supports_heat: false
     inter_frame_delay: 110ms
+    use_power_bit: false
 
 switch:
   - platform: countrymod
