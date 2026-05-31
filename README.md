@@ -44,21 +44,50 @@ switch:
     type: feature
     name: RV AC Feature Bit
 
+  - platform: countrymod
+    countrymod_id: rv_ac
+    type: eco
+    name: RV AC Eco
+
+  - platform: countrymod
+    countrymod_id: rv_ac
+    type: airflow
+    name: RV AC Airflow Bit
+
 button:
   - platform: countrymod
     countrymod_id: rv_ac
     type: light
     name: RV AC Light
+
+  - platform: countrymod
+    countrymod_id: rv_ac
+    type: display
+    name: RV AC Display
+
+  - platform: countrymod
+    countrymod_id: rv_ac
+    type: zigzag
+    name: RV AC Zigzag
 ```
 
 Supported climate modes are `OFF`, `COOL`, `HEAT`, and `FAN_ONLY`. Supported
 fan modes are `AUTO`, `LOW`, `MEDIUM`, and `HIGH`, where `HIGH` maps to the
 protocol's shared fan code for display speeds 3/4/5.
 
+The remote's main `ECO`, `AUTO`, and `TURBO` modes are exposed through standard
+climate presets as `ECO`, `NONE`, and `BOOST`. The optional `eco` and `turbo`
+switches provide direct switch entities for the same protocol state.
+
 The ambiguous protocol bit `0x40` is exposed as a neutral `feature` switch by
 default. Set `feature_as_swing: true` only after verifying that the physical
 unit treats that bit as swing.
 
-The `light` button sends the separate one-frame command captured from the remote
-button labeled with a crossed-out lightbulb. Its exact physical behavior still
-needs verification, so it is exposed as a momentary button rather than a switch.
+The `airflow` switch sends the full-state flag captured from the remote button
+labeled with a horizontal line and three rising squiggles. Its exact physical
+behavior still needs verification, so the name intentionally stays generic.
+
+The `light`, `display`, and `zigzag` buttons send separate one-frame commands
+captured from the crossed-out lightbulb, `DISP.`, and three-section zig-zag
+remote labels. Their exact physical behavior still needs verification, so they
+are exposed as momentary buttons rather than switches.

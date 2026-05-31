@@ -11,6 +11,7 @@ namespace esphome::countrymod {
 
 static const char *const TAG = "countrymod.climate";
 
+static constexpr uint8_t MODE_BASE_ECO = 0x00;
 static constexpr uint8_t MODE_BASE_COOL = 0x01;
 static constexpr uint8_t MODE_BASE_FAN = 0x03;
 static constexpr uint8_t MODE_BASE_HEAT = 0x04;
@@ -19,11 +20,15 @@ static constexpr uint8_t POWER_BIT = 0x08;
 static constexpr uint8_t FEATURE_BIT = 0x40;
 static constexpr uint8_t NIGHT_BIT = 0x80;
 static constexpr uint8_t TURBO_FLAG = 0x10;
+static constexpr uint8_t AIRFLOW_FLAG = 0x80;
+static constexpr uint8_t ECO_TEMP_CODE = 0x08;
 
 static constexpr uint8_t FIRST_PACKET_MARKER = 0x58;
 static constexpr uint8_t SECOND_PACKET_MARKER = 0x78;
 
 static constexpr uint32_t LIGHT_COMMAND_FRAME = 0x008844CC;
+static constexpr uint32_t DISPLAY_COMMAND_FRAME = 0x22AA66EE;
+static constexpr uint32_t ZIGZAG_COMMAND_FRAME = 0x55DD33BB;
 
 void CountrymodClimate::setup() {
   climate_ir::ClimateIR::setup();
@@ -39,6 +44,8 @@ void CountrymodClimate::dump_config() {
   LOG_SWITCH("  ", "Turbo Switch", this->turbo_switch_);
   LOG_SWITCH("  ", "Night Switch", this->night_switch_);
   LOG_SWITCH("  ", "Feature Switch", this->feature_switch_);
+  LOG_SWITCH("  ", "Eco Switch", this->eco_switch_);
+  LOG_SWITCH("  ", "Airflow Switch", this->airflow_switch_);
 }
 
 climate::ClimateTraits CountrymodClimate::traits() {
@@ -62,6 +69,8 @@ climate::ClimateTraits CountrymodClimate::traits() {
   if (this->feature_as_swing_) {
     traits.set_supported_swing_modes({climate::CLIMATE_SWING_OFF, climate::CLIMATE_SWING_VERTICAL});
   }
+  traits.set_supported_presets(
+      {climate::CLIMATE_PRESET_NONE, climate::CLIMATE_PRESET_ECO, climate::CLIMATE_PRESET_BOOST});
   traits.set_visual_min_temperature(16.0f);
   traits.set_visual_max_temperature(30.0f);
   traits.set_visual_temperature_step(1.0f);
@@ -69,6 +78,8 @@ climate::ClimateTraits CountrymodClimate::traits() {
 }
 
 void CountrymodClimate::control(const climate::ClimateCall &call) {
+  const bool preset_requested = call.get_preset().has_value();
+
   if (call.get_mode().has_value()) {
     auto requested_mode = *call.get_mode();
     switch (requested_mode) {
@@ -87,10 +98,12 @@ void CountrymodClimate::control(const climate::ClimateCall &call) {
         }
         this->mode = requested_mode;
         this->last_on_mode_ = requested_mode;
+        this->eco_on_ = false;
         break;
       case climate::CLIMATE_MODE_FAN_ONLY:
         this->mode = requested_mode;
         this->last_on_mode_ = requested_mode;
+        this->eco_on_ = false;
         break;
       case climate::CLIMATE_MODE_OFF:
         this->mode = climate::CLIMATE_MODE_OFF;
@@ -103,6 +116,9 @@ void CountrymodClimate::control(const climate::ClimateCall &call) {
 
   if (call.get_target_temperature().has_value()) {
     this->target_temperature = clamp<float>(std::round(*call.get_target_temperature()), 16.0f, 30.0f);
+    if (this->eco_on_ && !preset_requested) {
+      this->eco_on_ = false;
+    }
   }
 
   if (call.get_fan_mode().has_value()) {
@@ -125,6 +141,35 @@ void CountrymodClimate::control(const climate::ClimateCall &call) {
     this->swing_mode = this->feature_on_ ? climate::CLIMATE_SWING_VERTICAL : climate::CLIMATE_SWING_OFF;
   }
 
+  if (preset_requested) {
+    switch (*call.get_preset()) {
+      case climate::CLIMATE_PRESET_ECO:
+        if (!this->supports_cool_) {
+          ESP_LOGW(TAG, "Eco preset requires cool support");
+          break;
+        }
+        this->eco_on_ = true;
+        this->turbo_on_ = false;
+        this->last_on_mode_ = climate::CLIMATE_MODE_COOL;
+        if (this->mode != climate::CLIMATE_MODE_OFF) {
+          this->mode = climate::CLIMATE_MODE_COOL;
+        }
+        break;
+      case climate::CLIMATE_PRESET_BOOST:
+        this->turbo_on_ = true;
+        this->eco_on_ = false;
+        break;
+      case climate::CLIMATE_PRESET_NONE:
+        this->eco_on_ = false;
+        this->turbo_on_ = false;
+        break;
+      default:
+        ESP_LOGW(TAG, "Unsupported preset requested: %s",
+                 LOG_STR_ARG(climate::climate_preset_to_string(*call.get_preset())));
+        break;
+    }
+  }
+
   this->sanitize_state_();
   this->update_action_();
   this->transmit_state();
@@ -134,6 +179,10 @@ void CountrymodClimate::control(const climate::ClimateCall &call) {
 
 bool CountrymodClimate::set_turbo(bool turbo_on) {
   this->turbo_on_ = turbo_on;
+  if (this->turbo_on_) {
+    this->eco_on_ = false;
+  }
+  this->update_preset_();
   this->transmit_state();
   this->publish_state();
   this->publish_option_switches_();
@@ -159,9 +208,48 @@ bool CountrymodClimate::set_feature(bool feature_on) {
   return true;
 }
 
+bool CountrymodClimate::set_eco(bool eco_on) {
+  if (eco_on && !this->supports_cool_) {
+    ESP_LOGW(TAG, "Eco mode requires cool support");
+    return false;
+  }
+  this->eco_on_ = eco_on;
+  if (this->eco_on_) {
+    this->turbo_on_ = false;
+    this->last_on_mode_ = climate::CLIMATE_MODE_COOL;
+    if (this->mode != climate::CLIMATE_MODE_OFF) {
+      this->mode = climate::CLIMATE_MODE_COOL;
+    }
+  }
+  this->sanitize_state_();
+  this->update_action_();
+  this->transmit_state();
+  this->publish_state();
+  this->publish_option_switches_();
+  return true;
+}
+
+bool CountrymodClimate::set_airflow(bool airflow_on) {
+  this->airflow_on_ = airflow_on;
+  this->transmit_state();
+  this->publish_state();
+  this->publish_option_switches_();
+  return true;
+}
+
 void CountrymodClimate::send_light_command() {
-  ESP_LOGD(TAG, "Sending Countrymod light/display command: 0x%08" PRIX32, LIGHT_COMMAND_FRAME);
+  ESP_LOGD(TAG, "Sending Countrymod light command: 0x%08" PRIX32, LIGHT_COMMAND_FRAME);
   this->transmit_lg_frame_(LIGHT_COMMAND_FRAME);
+}
+
+void CountrymodClimate::send_display_command() {
+  ESP_LOGD(TAG, "Sending Countrymod display command: 0x%08" PRIX32, DISPLAY_COMMAND_FRAME);
+  this->transmit_lg_frame_(DISPLAY_COMMAND_FRAME);
+}
+
+void CountrymodClimate::send_zigzag_command() {
+  ESP_LOGD(TAG, "Sending Countrymod zigzag command: 0x%08" PRIX32, ZIGZAG_COMMAND_FRAME);
+  this->transmit_lg_frame_(ZIGZAG_COMMAND_FRAME);
 }
 
 void CountrymodClimate::transmit_state() {
@@ -183,7 +271,15 @@ bool CountrymodClimate::on_receive(remote_base::RemoteReceiveData data) {
     return false;
   }
   if (decoded->data == LIGHT_COMMAND_FRAME) {
-    ESP_LOGD(TAG, "Received Countrymod light/display command: 0x%08" PRIX32, decoded->data);
+    ESP_LOGD(TAG, "Received Countrymod light command: 0x%08" PRIX32, decoded->data);
+    return true;
+  }
+  if (decoded->data == DISPLAY_COMMAND_FRAME) {
+    ESP_LOGD(TAG, "Received Countrymod display command: 0x%08" PRIX32, decoded->data);
+    return true;
+  }
+  if (decoded->data == ZIGZAG_COMMAND_FRAME) {
+    ESP_LOGD(TAG, "Received Countrymod zigzag command: 0x%08" PRIX32, decoded->data);
     return true;
   }
   return this->apply_lg_frame_(decoded->data);
@@ -210,8 +306,14 @@ uint32_t CountrymodClimate::make_frame_(bool second_packet) const {
   }
 
   const auto temp_c = static_cast<uint8_t>(clamp<float>(std::round(this->target_temperature), 16.0f, 30.0f));
-  const uint8_t temp_code = temp_c - 16;
-  const uint8_t flags = this->turbo_on_ ? TURBO_FLAG : 0x00;
+  const uint8_t temp_code = this->eco_on_ ? ECO_TEMP_CODE : temp_c - 16;
+  uint8_t flags = 0x00;
+  if (this->turbo_on_) {
+    flags |= TURBO_FLAG;
+  }
+  if (this->airflow_on_) {
+    flags |= AIRFLOW_FLAG;
+  }
   const uint8_t marker = second_packet ? SECOND_PACKET_MARKER : FIRST_PACKET_MARKER;
 
   return (uint32_t{rev8_(control)} << 24) | (uint32_t{rev8_(temp_code)} << 16) | (uint32_t{rev8_(flags)} << 8) |
@@ -241,7 +343,8 @@ bool CountrymodClimate::apply_lg_frame_(uint32_t frame) {
   }
 
   const uint8_t mode_base = control & 0x07;
-  const climate::ClimateMode decoded_mode = this->mode_from_base_(mode_base);
+  const bool decoded_eco = mode_base == MODE_BASE_ECO;
+  const climate::ClimateMode decoded_mode = decoded_eco ? climate::CLIMATE_MODE_COOL : this->mode_from_base_(mode_base);
   if (decoded_mode == climate::CLIMATE_MODE_OFF) {
     ESP_LOGV(TAG, "Ignoring Countrymod frame with unknown mode base 0x%02X", mode_base);
     return false;
@@ -256,14 +359,19 @@ bool CountrymodClimate::apply_lg_frame_(uint32_t frame) {
   }
 
   this->fan_mode = this->fan_mode_from_code_((control >> 4) & 0x03);
-  this->target_temperature = clamp<float>(static_cast<float>(temp_code) + 16.0f, 16.0f, 30.0f);
+  if (!decoded_eco) {
+    this->target_temperature = clamp<float>(static_cast<float>(temp_code) + 16.0f, 16.0f, 30.0f);
+  }
   this->feature_on_ = (control & FEATURE_BIT) != 0;
   this->night_on_ = (control & NIGHT_BIT) != 0;
   this->turbo_on_ = (flags & TURBO_FLAG) != 0;
+  this->eco_on_ = decoded_eco && !this->turbo_on_;
+  this->airflow_on_ = (flags & AIRFLOW_FLAG) != 0;
   if (this->feature_as_swing_) {
     this->swing_mode = this->feature_on_ ? climate::CLIMATE_SWING_VERTICAL : climate::CLIMATE_SWING_OFF;
   }
 
+  this->sanitize_state_();
   this->update_action_();
   ESP_LOGD(TAG, "Decoded Countrymod frame 0x%08" PRIX32, frame);
   this->publish_state();
@@ -285,6 +393,10 @@ climate::ClimateMode CountrymodClimate::mode_from_base_(uint8_t mode_base) const
 }
 
 uint8_t CountrymodClimate::mode_base_for_transmit_() const {
+  if (this->eco_on_) {
+    return MODE_BASE_ECO;
+  }
+
   climate::ClimateMode effective_mode = this->mode == climate::CLIMATE_MODE_OFF ? this->last_on_mode_ : this->mode;
   switch (effective_mode) {
     case climate::CLIMATE_MODE_HEAT:
@@ -332,6 +444,8 @@ void CountrymodClimate::publish_option_switches_() {
   this->publish_option_switch_(this->turbo_switch_, this->turbo_on_);
   this->publish_option_switch_(this->night_switch_, this->night_on_);
   this->publish_option_switch_(this->feature_switch_, this->feature_on_);
+  this->publish_option_switch_(this->eco_switch_, this->eco_on_);
+  this->publish_option_switch_(this->airflow_switch_, this->airflow_on_);
 }
 
 void CountrymodClimate::publish_option_switch_(switch_::Switch *option_switch, bool state) {
@@ -355,6 +469,16 @@ void CountrymodClimate::update_action_() {
     default:
       this->action = climate::CLIMATE_ACTION_OFF;
       break;
+  }
+}
+
+void CountrymodClimate::update_preset_() {
+  if (this->eco_on_) {
+    this->set_preset_(climate::CLIMATE_PRESET_ECO);
+  } else if (this->turbo_on_) {
+    this->set_preset_(climate::CLIMATE_PRESET_BOOST);
+  } else {
+    this->set_preset_(climate::CLIMATE_PRESET_NONE);
   }
 }
 
@@ -421,6 +545,18 @@ void CountrymodClimate::sanitize_state_() {
   } else {
     this->swing_mode = climate::CLIMATE_SWING_OFF;
   }
+
+  if (this->eco_on_ && !this->supports_cool_) {
+    this->eco_on_ = false;
+  }
+  if (this->eco_on_) {
+    this->turbo_on_ = false;
+    this->last_on_mode_ = climate::CLIMATE_MODE_COOL;
+    if (this->mode != climate::CLIMATE_MODE_OFF) {
+      this->mode = climate::CLIMATE_MODE_COOL;
+    }
+  }
+  this->update_preset_();
 }
 
 void CountrymodButton::press_action() {
@@ -432,6 +568,12 @@ void CountrymodButton::press_action() {
   switch (this->kind_) {
     case COUNTRYMOD_BUTTON_LIGHT:
       this->get_parent()->send_light_command();
+      break;
+    case COUNTRYMOD_BUTTON_DISPLAY:
+      this->get_parent()->send_display_command();
+      break;
+    case COUNTRYMOD_BUTTON_ZIGZAG:
+      this->get_parent()->send_zigzag_command();
       break;
   }
 }
@@ -452,6 +594,12 @@ void CountrymodSwitch::write_state(bool state) {
       break;
     case COUNTRYMOD_SWITCH_FEATURE:
       ok = this->get_parent()->set_feature(state);
+      break;
+    case COUNTRYMOD_SWITCH_ECO:
+      ok = this->get_parent()->set_eco(state);
+      break;
+    case COUNTRYMOD_SWITCH_AIRFLOW:
+      ok = this->get_parent()->set_airflow(state);
       break;
   }
 

@@ -1,7 +1,11 @@
 CONF_COUNTRYMOD_ID = "countrymod_id"
 CONF_TYPE = "type"
 
+TYPE_AIRFLOW = "airflow"
+TYPE_DISPLAY = "display"
+TYPE_ECO = "eco"
 TYPE_FEATURE = "feature"
 TYPE_LIGHT = "light"
 TYPE_NIGHT = "night"
 TYPE_TURBO = "turbo"
+TYPE_ZIGZAG = "zigzag"

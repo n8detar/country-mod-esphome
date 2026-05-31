@@ -55,8 +55,28 @@ switch:
     type: feature
     name: RV AC Feature Bit
 
+  - platform: countrymod
+    countrymod_id: rv_ac
+    type: eco
+    name: RV AC Eco
+
+  - platform: countrymod
+    countrymod_id: rv_ac
+    type: airflow
+    name: RV AC Airflow Bit
+
 button:
   - platform: countrymod
     countrymod_id: rv_ac
     type: light
     name: RV AC Light
+
+  - platform: countrymod
+    countrymod_id: rv_ac
+    type: display
+    name: RV AC Display
+
+  - platform: countrymod
+    countrymod_id: rv_ac
+    type: zigzag
+    name: RV AC Zigzag
