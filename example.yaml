@@ -20,7 +20,8 @@ remote_transmitter:
   id: ir_tx
   pin: GPIO4
   carrier_duty_percent: 50%
-  non_blocking: true
+  rmt_symbols: 192
+  non_blocking: false
 
 # Optional receiver for sniffing and optimistic state sync from the handheld remote.
 # remote_receiver:
@@ -41,7 +42,7 @@ climate:
     transmitter_id: ir_tx
     # receiver_id: ir_rx
     supports_heat: false
-    inter_frame_delay: 110ms
+    inter_frame_delay: 190ms
     use_power_bit: true
 
 switch:

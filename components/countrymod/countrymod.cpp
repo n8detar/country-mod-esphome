@@ -55,6 +55,9 @@ void CountrymodClimate::dump_config() {
   LOG_CLIMATE("", "Countrymod Climate", this);
   ESP_LOGCONFIG(TAG, "  Inter-frame delay: %" PRIu32 " ms", this->inter_frame_delay_ms_);
   ESP_LOGCONFIG(TAG, "  Use power bit: %s", this->use_power_bit_ ? "yes" : "no");
+  if (this->inter_frame_delay_ms_ < 180) {
+    ESP_LOGW(TAG, "  Captured climate commands use about 190 ms packet spacing; shorter spacing may be ignored");
+  }
   if (this->feature_as_swing_) {
     ESP_LOGW(TAG, "  feature_as_swing is deprecated and ignored; use the negative_ion switch instead");
   }
@@ -266,8 +269,8 @@ void CountrymodClimate::transmit_state() {
 
   ESP_LOGD(TAG,
            "Sending Countrymod climate packet pair: 0x%08" PRIX32 "/0x%08" PRIX32 " then 0x%08" PRIX32
-           "/0x%08" PRIX32,
-           first_frame, first_tail, second_frame, second_tail);
+           "/0x%08" PRIX32 " (packet spacing target: %" PRIu32 " ms)",
+           first_frame, first_tail, second_frame, second_tail, this->inter_frame_delay_ms_);
 
   this->transmit_countrymod_climate_pair_(first_frame, first_tail, second_frame, second_tail);
 }
