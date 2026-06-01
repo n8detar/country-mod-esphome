@@ -3,6 +3,7 @@
 #include "esphome/components/remote_base/lg_protocol.h"
 #include "esphome/core/helpers.h"
 #include "esphome/core/log.h"
+#include "esphome/core/version.h"
 
 #include <algorithm>
 #include <cmath>
@@ -49,8 +50,14 @@ static const char *const COUNTRYMOD_FAN_SPEED_2 = "Speed 2";
 static const char *const COUNTRYMOD_FAN_SPEED_3 = "Speed 3";
 static const char *const COUNTRYMOD_FAN_SPEED_4 = "Speed 4";
 static const char *const COUNTRYMOD_FAN_SPEED_5 = "Speed 5";
+static const char *const COUNTRYMOD_CUSTOM_FAN_MODES[] = {COUNTRYMOD_FAN_SPEED_1, COUNTRYMOD_FAN_SPEED_2,
+                                                          COUNTRYMOD_FAN_SPEED_3, COUNTRYMOD_FAN_SPEED_4,
+                                                          COUNTRYMOD_FAN_SPEED_5};
 
 void CountrymodClimate::setup() {
+#if ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 5, 0)
+  this->set_supported_custom_fan_modes(COUNTRYMOD_CUSTOM_FAN_MODES);
+#endif
   climate_ir::ClimateIR::setup();
   this->sanitize_state_();
   this->update_action_();
@@ -92,8 +99,9 @@ climate::ClimateTraits CountrymodClimate::traits() {
   }
   traits.set_supported_fan_modes({climate::CLIMATE_FAN_AUTO, climate::CLIMATE_FAN_LOW, climate::CLIMATE_FAN_MEDIUM,
                                   climate::CLIMATE_FAN_HIGH});
-  traits.set_supported_custom_fan_modes({COUNTRYMOD_FAN_SPEED_1, COUNTRYMOD_FAN_SPEED_2, COUNTRYMOD_FAN_SPEED_3,
-                                         COUNTRYMOD_FAN_SPEED_4, COUNTRYMOD_FAN_SPEED_5});
+#if ESPHOME_VERSION_CODE < VERSION_CODE(2026, 5, 0)
+  traits.set_supported_custom_fan_modes(COUNTRYMOD_CUSTOM_FAN_MODES);
+#endif
   traits.set_supported_presets(
       {climate::CLIMATE_PRESET_NONE, climate::CLIMATE_PRESET_ECO, climate::CLIMATE_PRESET_BOOST});
   traits.set_visual_min_temperature(16.0f);
