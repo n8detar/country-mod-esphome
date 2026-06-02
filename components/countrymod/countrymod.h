@@ -75,8 +75,8 @@ class CountrymodClimate : public climate_ir::ClimateIR {
   void encode_countrymod_tail_(remote_base::RemoteTransmitData *dst, uint32_t tail, uint32_t gap_us) const;
   void encode_countrymod_climate_packet_(remote_base::RemoteTransmitData *dst, uint32_t frame, uint32_t tail,
                                          uint32_t final_gap_us) const;
-  uint32_t climate_packet_duration_(uint32_t frame, uint32_t tail, uint32_t final_gap_us) const;
-  uint32_t bit_duration_(uint64_t value, uint8_t nbits) const;
+  uint32_t configured_packet_gap_us_() const;
+  uint32_t packet_gap_us_() const;
   bool apply_lg_frame_(uint32_t frame);
 
   climate::ClimateMode mode_from_base_(uint8_t mode_base) const;
@@ -100,7 +100,7 @@ class CountrymodClimate : public climate_ir::ClimateIR {
   bool airflow_on_{false};
   bool feature_as_swing_{false};
   bool use_power_bit_{true};
-  uint32_t inter_frame_delay_ms_{190};
+  uint32_t inter_frame_delay_ms_{7};
 
   switch_::Switch *turbo_switch_{nullptr};
   switch_::Switch *night_switch_{nullptr};

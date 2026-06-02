@@ -35,6 +35,8 @@ static constexpr uint32_t COUNTRYMOD_ONE_SPACE_US = 1690;
 static constexpr uint32_t COUNTRYMOD_ZERO_SPACE_US = 520;
 static constexpr uint32_t COUNTRYMOD_MESSAGE_SPACE_US = 20000;
 static constexpr uint32_t COUNTRYMOD_FRAME_GAP_US = 25300;
+static constexpr uint32_t COUNTRYMOD_YAP0F_PACKET_GAP_US = 7300;
+static constexpr uint32_t COUNTRYMOD_MAX_PACKET_GAP_US = 20000;
 static constexpr uint8_t COUNTRYMOD_TRAILER_BITS = 0b010;
 static constexpr uint8_t COUNTRYMOD_TRAILER_NBITS = 3;
 static constexpr uint8_t COUNTRYMOD_FRAME_NBITS = 32 + COUNTRYMOD_TRAILER_NBITS;
@@ -66,10 +68,11 @@ void CountrymodClimate::setup() {
 
 void CountrymodClimate::dump_config() {
   LOG_CLIMATE("", "Countrymod Climate", this);
-  ESP_LOGCONFIG(TAG, "  Inter-frame delay: %" PRIu32 " ms", this->inter_frame_delay_ms_);
+  ESP_LOGCONFIG(TAG, "  YAP0F packet gap: %" PRIu32 " us", this->packet_gap_us_());
   ESP_LOGCONFIG(TAG, "  Use power bit: %s", this->use_power_bit_ ? "yes" : "no");
-  if (this->inter_frame_delay_ms_ < 180) {
-    ESP_LOGW(TAG, "  Captured climate commands use about 190 ms packet spacing; shorter spacing may be ignored");
+  if (this->configured_packet_gap_us_() > COUNTRYMOD_MAX_PACKET_GAP_US) {
+    ESP_LOGW(TAG, "  Configured inter_frame_delay is too large for YAP0F; using %" PRIu32 " us instead",
+             COUNTRYMOD_YAP0F_PACKET_GAP_US);
   }
   if (this->feature_as_swing_) {
     ESP_LOGW(TAG, "  feature_as_swing is deprecated and ignored; use the negative_ion switch instead");
@@ -288,8 +291,8 @@ void CountrymodClimate::transmit_state() {
 
   ESP_LOGD(TAG,
            "Sending Countrymod climate packet pair: 0x%08" PRIX32 "/0x%08" PRIX32 " then 0x%08" PRIX32
-           "/0x%08" PRIX32 " (packet spacing target: %" PRIu32 " ms)",
-           first_frame, first_tail, second_frame, second_tail, this->inter_frame_delay_ms_);
+           "/0x%08" PRIX32 " (YAP0F packet gap: %" PRIu32 " us)",
+           first_frame, first_tail, second_frame, second_tail, this->packet_gap_us_());
 
   this->transmit_countrymod_climate_pair_(first_frame, first_tail, second_frame, second_tail);
 }
@@ -402,17 +405,10 @@ void CountrymodClimate::transmit_countrymod_climate_pair_(uint32_t first_frame, 
     return;
   }
 
-  const uint32_t first_packet_duration_us =
-      this->climate_packet_duration_(first_frame, first_tail, COUNTRYMOD_FRAME_GAP_US);
-  const uint32_t target_packet_spacing_us = this->inter_frame_delay_ms_ * 1000UL;
-  const uint32_t first_final_gap_us =
-      COUNTRYMOD_FRAME_GAP_US +
-      (target_packet_spacing_us > first_packet_duration_us ? target_packet_spacing_us - first_packet_duration_us : 0);
-
   auto transmit = this->transmitter_->transmit();
   auto *data = transmit.get_data();
   data->reserve((2 + COUNTRYMOD_FRAME_NBITS * 2u + 2 + COUNTRYMOD_TAIL_NBITS * 2u + 2) * 2u);
-  this->encode_countrymod_climate_packet_(data, first_frame, first_tail, first_final_gap_us);
+  this->encode_countrymod_climate_packet_(data, first_frame, first_tail, this->packet_gap_us_());
   this->encode_countrymod_climate_packet_(data, second_frame, second_tail, COUNTRYMOD_FRAME_GAP_US);
   transmit.perform();
 }
@@ -446,19 +442,14 @@ void CountrymodClimate::encode_countrymod_climate_packet_(remote_base::RemoteTra
   this->encode_countrymod_tail_(dst, tail, final_gap_us);
 }
 
-uint32_t CountrymodClimate::climate_packet_duration_(uint32_t frame, uint32_t tail, uint32_t final_gap_us) const {
-  const uint64_t burst = (uint64_t{frame} << COUNTRYMOD_TRAILER_NBITS) | COUNTRYMOD_TRAILER_BITS;
-  return COUNTRYMOD_HEADER_MARK_US + COUNTRYMOD_HEADER_SPACE_US +
-         this->bit_duration_(burst, COUNTRYMOD_FRAME_NBITS) + COUNTRYMOD_BIT_MARK_US + COUNTRYMOD_MESSAGE_SPACE_US +
-         this->bit_duration_(tail, COUNTRYMOD_TAIL_NBITS) + COUNTRYMOD_BIT_MARK_US + final_gap_us;
-}
+uint32_t CountrymodClimate::configured_packet_gap_us_() const { return this->inter_frame_delay_ms_ * 1000UL; }
 
-uint32_t CountrymodClimate::bit_duration_(uint64_t value, uint8_t nbits) const {
-  uint32_t duration = 0;
-  for (uint64_t mask = uint64_t{1} << (nbits - 1); mask != 0; mask >>= 1) {
-    duration += COUNTRYMOD_BIT_MARK_US + ((value & mask) != 0 ? COUNTRYMOD_ONE_SPACE_US : COUNTRYMOD_ZERO_SPACE_US);
+uint32_t CountrymodClimate::packet_gap_us_() const {
+  const uint32_t configured_gap_us = this->configured_packet_gap_us_();
+  if (configured_gap_us == 7000 || configured_gap_us > COUNTRYMOD_MAX_PACKET_GAP_US) {
+    return COUNTRYMOD_YAP0F_PACKET_GAP_US;
   }
-  return duration;
+  return configured_gap_us;
 }
 
 bool CountrymodClimate::apply_lg_frame_(uint32_t frame) {

@@ -42,7 +42,7 @@ climate:
     transmitter_id: ir_tx
     # receiver_id: ir_rx
     supports_heat: false
-    inter_frame_delay: 190ms
+    inter_frame_delay: 7ms
     use_power_bit: true
 
 switch:

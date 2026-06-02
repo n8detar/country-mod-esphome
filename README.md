@@ -10,14 +10,13 @@ keeps the current climate state locally, builds both packet variants, and
 transmits the pair as one raw IR sequence.
 
 Climate packets are much longer than the one-off display and voltage commands.
-The example uses `rmt_symbols: 192`, `non_blocking: false`, and a 190 ms packet
-spacing because the captured handheld Cool/72F/Auto ON command used about that
-spacing between the two full-state packets.
+The example uses `rmt_symbols: 192`, `non_blocking: false`, and a short YAP0F
+packet gap so the two full-state packets are transmitted as one raw IR sequence.
 
 ESPHome's receiver identifies the first 32 bits as `remote.lg`, but the physical
 remote transmits those bits as a Countrymod burst with a 9 ms / 4.5 ms header,
 a fixed `010` separator, a second 32-bit tail block, and the captured
-Countrymod timing rather than ESPHome's generic LG timing.
+Countrymod/YAP0F timing rather than ESPHome's generic LG timing.
 
 ## Example
 
@@ -47,7 +46,7 @@ climate:
     device_id: rv_ac_device
     transmitter_id: ir_tx
     supports_heat: false
-    inter_frame_delay: 190ms
+    inter_frame_delay: 7ms
     use_power_bit: true
 
 switch:
