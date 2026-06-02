@@ -27,9 +27,7 @@ enum CountrymodButtonKind : uint8_t {
 class CountrymodClimate : public climate_ir::ClimateIR {
  public:
   CountrymodClimate()
-      : climate_ir::ClimateIR(16.0f, 30.0f, 1.0f, false, true,
-                              {climate::CLIMATE_FAN_AUTO, climate::CLIMATE_FAN_LOW, climate::CLIMATE_FAN_MEDIUM,
-                               climate::CLIMATE_FAN_HIGH}) {}
+      : climate_ir::ClimateIR(16.0f, 30.0f, 1.0f, false, true, {climate::CLIMATE_FAN_AUTO}) {}
 
   void setup() override;
   void dump_config() override;

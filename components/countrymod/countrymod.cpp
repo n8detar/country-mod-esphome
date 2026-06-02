@@ -100,8 +100,7 @@ climate::ClimateTraits CountrymodClimate::traits() {
   if (this->supports_heat_) {
     traits.add_supported_mode(climate::CLIMATE_MODE_HEAT);
   }
-  traits.set_supported_fan_modes({climate::CLIMATE_FAN_AUTO, climate::CLIMATE_FAN_LOW, climate::CLIMATE_FAN_MEDIUM,
-                                  climate::CLIMATE_FAN_HIGH});
+  traits.set_supported_fan_modes({climate::CLIMATE_FAN_AUTO});
 #if ESPHOME_VERSION_CODE < VERSION_CODE(2026, 5, 0)
   traits.set_supported_custom_fan_modes(COUNTRYMOD_CUSTOM_FAN_MODES);
 #endif

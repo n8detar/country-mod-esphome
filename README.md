@@ -109,11 +109,10 @@ the ESP controller device.
 
 Supported climate modes are `OFF`, `COOL`, `HEAT`, and `FAN_ONLY`. Set
 `supports_heat: false` to hide heat mode and ignore received heat frames on
-cool-only units. Standard fan modes are `AUTO`, `LOW`, `MEDIUM`, and `HIGH`;
-`AUTO`, `LOW`, `MEDIUM`, and `HIGH` map to captured auto, speed 1, speed 2, and
-speed 5 fields. Custom fan modes `Speed 1` through `Speed 5` are also exposed.
-The first 32-bit decode uses the protocol's shared code for display speeds
-3/4/5, while the hidden 32-bit tail selects the exact fan speed.
+cool-only units. Fan control exposes standard `AUTO` plus custom fan modes
+`Speed 1` through `Speed 5`, matching the handheld remote. The first 32-bit
+decode uses the protocol's shared code for display speeds 3/4/5, while the
+hidden 32-bit tail selects the exact fan speed.
 
 Captured cool-mode fan packets at 72F:
 
