@@ -14,6 +14,9 @@ AC Unit sold on Amazon under ASIN `B0DW3TYSNR`.
 esphome:
   name: countrymod-rv-ac
   friendly_name: Countrymod RV AC
+  devices:
+    - id: countrymod_device
+      name: Countrymod AC
 
 esp32:
   board: esp32dev
@@ -37,6 +40,7 @@ climate:
   - platform: countrymod
     id: rv_ac
     name: Climate
+    device_id: countrymod_device
     transmitter_id: ir_tx
     supports_heat: false
 
@@ -44,29 +48,38 @@ select:
   - platform: countrymod
     countrymod_id: rv_ac
     name: Mode
+    device_id: countrymod_device
 
 switch:
   - platform: countrymod
     countrymod_id: rv_ac
     type: night
     name: Night
+    device_id: countrymod_device
 
   - platform: countrymod
     countrymod_id: rv_ac
     type: negative_ion
     name: Negative Ion
+    device_id: countrymod_device
 
 button:
   - platform: countrymod
     countrymod_id: rv_ac
     type: display
     name: Display
+    device_id: countrymod_device
 
   - platform: countrymod
     countrymod_id: rv_ac
     type: view_voltage
     name: View Voltage
+    device_id: countrymod_device
 ```
+
+The `esphome.devices` block and matching `device_id` entries are optional. They
+group the climate, select, switches, and buttons under a `Countrymod AC`
+sub-device in Home Assistant.
 
 `rmt_symbols: 192` and `non_blocking: false` are recommended for reliable
 transmission with this component.

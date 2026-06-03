@@ -1,6 +1,9 @@
 esphome:
   name: countrymod-rv-ac
   friendly_name: Countrymod RV AC
+  devices:
+    - id: countrymod_device
+      name: Countrymod AC
 
 esp32:
   board: esp32dev
@@ -24,6 +27,7 @@ climate:
   - platform: countrymod
     id: rv_ac
     name: Climate
+    device_id: countrymod_device
     transmitter_id: ir_tx
     supports_heat: false
 
@@ -31,25 +35,30 @@ select:
   - platform: countrymod
     countrymod_id: rv_ac
     name: Mode
+    device_id: countrymod_device
 
 switch:
   - platform: countrymod
     countrymod_id: rv_ac
     type: night
     name: Night
+    device_id: countrymod_device
 
   - platform: countrymod
     countrymod_id: rv_ac
     type: negative_ion
     name: Negative Ion
+    device_id: countrymod_device
 
 button:
   - platform: countrymod
     countrymod_id: rv_ac
     type: display
     name: Display
+    device_id: countrymod_device
 
   - platform: countrymod
     countrymod_id: rv_ac
     type: view_voltage
     name: View Voltage
+    device_id: countrymod_device
