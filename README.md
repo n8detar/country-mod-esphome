@@ -49,13 +49,13 @@ climate:
     inter_frame_delay: 40ms
     use_power_bit: true
 
-switch:
+select:
   - platform: countrymod
     countrymod_id: rv_ac
-    type: turbo
-    name: Turbo
+    name: Mode
     device_id: rv_ac_device
 
+switch:
   - platform: countrymod
     countrymod_id: rv_ac
     type: night
@@ -68,12 +68,6 @@ switch:
     name: Negative Ion
     device_id: rv_ac_device
     disabled_by_default: true
-
-  - platform: countrymod
-    countrymod_id: rv_ac
-    type: eco
-    name: Eco
-    device_id: rv_ac_device
 
   - platform: countrymod
     countrymod_id: rv_ac
@@ -104,8 +98,8 @@ button:
 ```
 
 The `device_id` entries are optional, but when present they put the climate,
-switches, and buttons under the `RV AC` sub-device in Home Assistant instead of
-the ESP controller device.
+select, switches, and buttons under the `RV AC` sub-device in Home Assistant
+instead of the ESP controller device.
 
 Supported climate modes are `OFF`, `COOL`, `HEAT`, and `FAN_ONLY`. Set
 `supports_heat: false` to hide heat mode and ignore received heat frames on
@@ -125,10 +119,12 @@ Captured cool-mode fan packets at 72F:
 | Speed 4 | `9C60001A/0004000C` | `9C60001E/0000020A` |
 | Speed 5 | `9C60001A/0004000C` | `9C60001E/00000A06` |
 
-The remote's main `ECO`, `AUTO`, and `TURBO` modes are exposed through standard
-climate presets as `ECO`, `NONE`, and `BOOST`. The optional `eco` and `turbo`
-switches provide direct switch entities for the same protocol state. `BOOST`
-transmits the turbo flag with the captured max-fan IR fields.
+The remote's main `AUTO`, `ECO`, and `TURBO` modes are exposed as a select entity
+with options `Auto`, `Eco`, and `Turbo`. `Auto` is the default state with both
+ECO and Turbo disabled. The older `eco` and `turbo` switch types remain accepted
+for existing configs, but the select is preferred because those modes are
+mutually exclusive. `Turbo` transmits the turbo flag with the captured max-fan IR
+fields.
 
 `use_power_bit: true` matches handheld captures where ON climate frames decode
 as `0x9060...` and matching OFF frames decode as `0x8060...`. If your remote

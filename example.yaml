@@ -45,13 +45,13 @@ climate:
     inter_frame_delay: 40ms
     use_power_bit: true
 
-switch:
+select:
   - platform: countrymod
     countrymod_id: rv_ac
-    type: turbo
-    name: Turbo
+    name: Mode
     device_id: rv_ac_device
 
+switch:
   - platform: countrymod
     countrymod_id: rv_ac
     type: night
@@ -64,12 +64,6 @@ switch:
     name: Negative Ion
     device_id: rv_ac_device
     disabled_by_default: true
-
-  - platform: countrymod
-    countrymod_id: rv_ac
-    type: eco
-    name: Eco
-    device_id: rv_ac_device
 
   - platform: countrymod
     countrymod_id: rv_ac

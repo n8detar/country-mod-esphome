@@ -52,6 +52,9 @@ static const char *const COUNTRYMOD_FAN_SPEED_2 = "Speed 2";
 static const char *const COUNTRYMOD_FAN_SPEED_3 = "Speed 3";
 static const char *const COUNTRYMOD_FAN_SPEED_4 = "Speed 4";
 static const char *const COUNTRYMOD_FAN_SPEED_5 = "Speed 5";
+static const char *const COUNTRYMOD_PRESET_AUTO_OPTION = "Auto";
+static const char *const COUNTRYMOD_PRESET_ECO_OPTION = "Eco";
+static const char *const COUNTRYMOD_PRESET_TURBO_OPTION = "Turbo";
 static const char *const COUNTRYMOD_CUSTOM_FAN_MODES[] = {COUNTRYMOD_FAN_SPEED_1, COUNTRYMOD_FAN_SPEED_2,
                                                           COUNTRYMOD_FAN_SPEED_3, COUNTRYMOD_FAN_SPEED_4,
                                                           COUNTRYMOD_FAN_SPEED_5};
@@ -77,6 +80,7 @@ void CountrymodClimate::dump_config() {
   if (this->feature_as_swing_) {
     ESP_LOGW(TAG, "  feature_as_swing is deprecated and ignored; use the negative_ion switch instead");
   }
+  LOG_SELECT("  ", "Mode Select", this->mode_select_);
   LOG_SWITCH("  ", "Turbo Switch", this->turbo_switch_);
   LOG_SWITCH("  ", "Night Switch", this->night_switch_);
   LOG_SWITCH("  ", "Negative Ion Switch", this->negative_ion_switch_);
@@ -104,8 +108,6 @@ climate::ClimateTraits CountrymodClimate::traits() {
 #if ESPHOME_VERSION_CODE < VERSION_CODE(2026, 5, 0)
   traits.set_supported_custom_fan_modes(COUNTRYMOD_CUSTOM_FAN_MODES);
 #endif
-  traits.set_supported_presets(
-      {climate::CLIMATE_PRESET_NONE, climate::CLIMATE_PRESET_ECO, climate::CLIMATE_PRESET_BOOST});
   traits.set_visual_min_temperature(16.0f);
   traits.set_visual_max_temperature(30.0f);
   traits.set_visual_temperature_step(1.0f);
@@ -210,12 +212,48 @@ void CountrymodClimate::control(const climate::ClimateCall &call) {
   this->publish_option_switches_();
 }
 
-bool CountrymodClimate::set_turbo(bool turbo_on) {
-  this->turbo_on_ = turbo_on;
-  if (this->turbo_on_) {
-    this->eco_on_ = false;
+bool CountrymodClimate::set_preset_mode(size_t mode_index) {
+  switch (mode_index) {
+    case COUNTRYMOD_PRESET_AUTO:
+      this->eco_on_ = false;
+      this->turbo_on_ = false;
+      break;
+    case COUNTRYMOD_PRESET_ECO:
+      if (!this->supports_cool_) {
+        ESP_LOGW(TAG, "Eco mode requires cool support");
+        return false;
+      }
+      this->eco_on_ = true;
+      this->turbo_on_ = false;
+      this->last_on_mode_ = climate::CLIMATE_MODE_COOL;
+      if (this->mode != climate::CLIMATE_MODE_OFF) {
+        this->mode = climate::CLIMATE_MODE_COOL;
+      }
+      break;
+    case COUNTRYMOD_PRESET_TURBO:
+      this->eco_on_ = false;
+      this->turbo_on_ = true;
+      break;
+    default:
+      ESP_LOGW(TAG, "Unsupported Countrymod mode select index: %u", static_cast<unsigned>(mode_index));
+      return false;
   }
-  this->update_preset_();
+
+  this->sanitize_state_();
+  this->update_action_();
+  this->transmit_state();
+  this->publish_state();
+  this->publish_option_switches_();
+  return true;
+}
+
+bool CountrymodClimate::set_turbo(bool turbo_on) {
+  if (turbo_on) {
+    return this->set_preset_mode(COUNTRYMOD_PRESET_TURBO);
+  }
+  this->turbo_on_ = false;
+  this->sanitize_state_();
+  this->update_action_();
   this->transmit_state();
   this->publish_state();
   this->publish_option_switches_();
@@ -239,18 +277,10 @@ bool CountrymodClimate::set_negative_ion(bool negative_ion_on) {
 }
 
 bool CountrymodClimate::set_eco(bool eco_on) {
-  if (eco_on && !this->supports_cool_) {
-    ESP_LOGW(TAG, "Eco mode requires cool support");
-    return false;
+  if (eco_on) {
+    return this->set_preset_mode(COUNTRYMOD_PRESET_ECO);
   }
-  this->eco_on_ = eco_on;
-  if (this->eco_on_) {
-    this->turbo_on_ = false;
-    this->last_on_mode_ = climate::CLIMATE_MODE_COOL;
-    if (this->mode != climate::CLIMATE_MODE_OFF) {
-      this->mode = climate::CLIMATE_MODE_COOL;
-    }
-  }
+  this->eco_on_ = false;
   this->sanitize_state_();
   this->update_action_();
   this->transmit_state();
@@ -597,11 +627,26 @@ void CountrymodClimate::publish_option_switches_() {
   this->publish_option_switch_(this->negative_ion_switch_, this->negative_ion_on_);
   this->publish_option_switch_(this->eco_switch_, this->eco_on_);
   this->publish_option_switch_(this->airflow_switch_, this->airflow_on_);
+  this->publish_mode_select_();
 }
 
 void CountrymodClimate::publish_option_switch_(switch_::Switch *option_switch, bool state) {
   if (option_switch != nullptr) {
     option_switch->publish_state(state);
+  }
+}
+
+void CountrymodClimate::publish_mode_select_() {
+  if (this->mode_select_ == nullptr) {
+    return;
+  }
+
+  if (this->eco_on_) {
+    this->mode_select_->publish_state(COUNTRYMOD_PRESET_ECO_OPTION);
+  } else if (this->turbo_on_) {
+    this->mode_select_->publish_state(COUNTRYMOD_PRESET_TURBO_OPTION);
+  } else {
+    this->mode_select_->publish_state(COUNTRYMOD_PRESET_AUTO_OPTION);
   }
 }
 
@@ -724,6 +769,17 @@ void CountrymodButton::press_action() {
     case COUNTRYMOD_BUTTON_VIEW_VOLTAGE:
       this->get_parent()->send_view_voltage_command();
       break;
+  }
+}
+
+void CountrymodModeSelect::control(size_t index) {
+  if (this->get_parent() == nullptr) {
+    ESP_LOGW(TAG, "Ignoring mode select write without parent");
+    return;
+  }
+
+  if (!this->get_parent()->set_preset_mode(index)) {
+    ESP_LOGW(TAG, "Failed to write Countrymod mode select state");
   }
 }
 

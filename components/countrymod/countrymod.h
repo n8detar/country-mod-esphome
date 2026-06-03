@@ -2,6 +2,7 @@
 
 #include "esphome/components/button/button.h"
 #include "esphome/components/climate_ir/climate_ir.h"
+#include "esphome/components/select/select.h"
 #include "esphome/components/switch/switch.h"
 
 #include <cinttypes>
@@ -24,6 +25,12 @@ enum CountrymodButtonKind : uint8_t {
   COUNTRYMOD_BUTTON_ZIGZAG = COUNTRYMOD_BUTTON_VIEW_VOLTAGE,
 };
 
+enum CountrymodPresetMode : uint8_t {
+  COUNTRYMOD_PRESET_AUTO = 0,
+  COUNTRYMOD_PRESET_ECO = 1,
+  COUNTRYMOD_PRESET_TURBO = 2,
+};
+
 class CountrymodClimate : public climate_ir::ClimateIR {
  public:
   CountrymodClimate()
@@ -36,6 +43,7 @@ class CountrymodClimate : public climate_ir::ClimateIR {
   void set_inter_frame_delay(uint32_t inter_frame_delay_ms) { this->inter_frame_delay_ms_ = inter_frame_delay_ms; }
   void set_use_power_bit(bool use_power_bit) { this->use_power_bit_ = use_power_bit; }
 
+  bool set_preset_mode(size_t mode_index);
   bool set_turbo(bool turbo_on);
   bool set_night(bool night_on);
   bool set_negative_ion(bool negative_ion_on);
@@ -47,6 +55,7 @@ class CountrymodClimate : public climate_ir::ClimateIR {
   void send_view_voltage_command();
   void send_zigzag_command() { this->send_view_voltage_command(); }
 
+  void set_mode_select(select::Select *mode_select) { this->mode_select_ = mode_select; }
   void set_turbo_switch(switch_::Switch *turbo_switch) { this->turbo_switch_ = turbo_switch; }
   void set_night_switch(switch_::Switch *night_switch) { this->night_switch_ = night_switch; }
   void set_negative_ion_switch(switch_::Switch *negative_ion_switch) { this->negative_ion_switch_ = negative_ion_switch; }
@@ -86,6 +95,7 @@ class CountrymodClimate : public climate_ir::ClimateIR {
 
   void publish_option_switches_();
   void publish_option_switch_(switch_::Switch *option_switch, bool state);
+  void publish_mode_select_();
   void update_action_();
   void update_preset_();
   void sanitize_state_();
@@ -100,6 +110,7 @@ class CountrymodClimate : public climate_ir::ClimateIR {
   bool use_power_bit_{true};
   uint32_t inter_frame_delay_ms_{40};
 
+  select::Select *mode_select_{nullptr};
   switch_::Switch *turbo_switch_{nullptr};
   switch_::Switch *night_switch_{nullptr};
   switch_::Switch *negative_ion_switch_{nullptr};
@@ -115,6 +126,11 @@ class CountrymodButton : public button::Button, public Parented<CountrymodClimat
   void press_action() override;
 
   CountrymodButtonKind kind_;
+};
+
+class CountrymodModeSelect : public select::Select, public Parented<CountrymodClimate> {
+ protected:
+  void control(size_t index) override;
 };
 
 class CountrymodSwitch : public switch_::Switch, public Parented<CountrymodClimate> {

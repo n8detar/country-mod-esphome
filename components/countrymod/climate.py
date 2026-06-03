@@ -2,7 +2,7 @@ import esphome.codegen as cg
 from esphome.components import climate_ir
 import esphome.config_validation as cv
 
-AUTO_LOAD = ["button", "climate_ir", "switch"]
+AUTO_LOAD = ["button", "climate_ir", "select", "switch"]
 
 countrymod_ns = cg.esphome_ns.namespace("countrymod")
 CountrymodClimate = countrymod_ns.class_("CountrymodClimate", climate_ir.ClimateIR)
