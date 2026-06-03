@@ -25,10 +25,10 @@ enum CountrymodButtonKind : uint8_t {
   COUNTRYMOD_BUTTON_ZIGZAG = COUNTRYMOD_BUTTON_VIEW_VOLTAGE,
 };
 
-enum CountrymodPresetMode : uint8_t {
-  COUNTRYMOD_PRESET_AUTO = 0,
-  COUNTRYMOD_PRESET_ECO = 1,
-  COUNTRYMOD_PRESET_TURBO = 2,
+enum CountrymodModeOption : uint8_t {
+  COUNTRYMOD_MODE_AUTO = 0,
+  COUNTRYMOD_MODE_ECO = 1,
+  COUNTRYMOD_MODE_TURBO = 2,
 };
 
 class CountrymodClimate : public climate_ir::ClimateIR {
@@ -43,7 +43,7 @@ class CountrymodClimate : public climate_ir::ClimateIR {
   void set_inter_frame_delay(uint32_t inter_frame_delay_ms) { this->inter_frame_delay_ms_ = inter_frame_delay_ms; }
   void set_use_power_bit(bool use_power_bit) { this->use_power_bit_ = use_power_bit; }
 
-  bool set_preset_mode(size_t mode_index);
+  bool set_mode_option(size_t mode_index);
   bool set_turbo(bool turbo_on);
   bool set_night(bool night_on);
   bool set_negative_ion(bool negative_ion_on);
@@ -91,13 +91,13 @@ class CountrymodClimate : public climate_ir::ClimateIR {
   uint8_t fan_speed_for_transmit_() const;
   uint8_t fan_code_for_transmit_() const;
   uint8_t tail_fan_code_for_transmit_() const;
-  climate::ClimateFanMode fan_mode_from_code_(uint8_t fan_code) const;
+  void set_custom_fan_speed_(uint8_t fan_speed);
+  void set_fan_from_code_(uint8_t fan_code);
 
   void publish_option_switches_();
   void publish_option_switch_(switch_::Switch *option_switch, bool state);
   void publish_mode_select_();
   void update_action_();
-  void update_preset_();
   void sanitize_state_();
 
   climate::ClimateMode last_on_mode_{climate::CLIMATE_MODE_COOL};

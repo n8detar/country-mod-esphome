@@ -52,9 +52,6 @@ static const char *const COUNTRYMOD_FAN_SPEED_2 = "Speed 2";
 static const char *const COUNTRYMOD_FAN_SPEED_3 = "Speed 3";
 static const char *const COUNTRYMOD_FAN_SPEED_4 = "Speed 4";
 static const char *const COUNTRYMOD_FAN_SPEED_5 = "Speed 5";
-static const char *const COUNTRYMOD_PRESET_AUTO_OPTION = "Auto";
-static const char *const COUNTRYMOD_PRESET_ECO_OPTION = "Eco";
-static const char *const COUNTRYMOD_PRESET_TURBO_OPTION = "Turbo";
 static const char *const COUNTRYMOD_CUSTOM_FAN_MODES[] = {COUNTRYMOD_FAN_SPEED_1, COUNTRYMOD_FAN_SPEED_2,
                                                           COUNTRYMOD_FAN_SPEED_3, COUNTRYMOD_FAN_SPEED_4,
                                                           COUNTRYMOD_FAN_SPEED_5};
@@ -115,8 +112,6 @@ climate::ClimateTraits CountrymodClimate::traits() {
 }
 
 void CountrymodClimate::control(const climate::ClimateCall &call) {
-  const bool preset_requested = call.get_preset().has_value();
-
   if (call.get_mode().has_value()) {
     auto requested_mode = *call.get_mode();
     switch (requested_mode) {
@@ -153,7 +148,7 @@ void CountrymodClimate::control(const climate::ClimateCall &call) {
 
   if (call.get_target_temperature().has_value()) {
     this->target_temperature = clamp<float>(std::round(*call.get_target_temperature()), 16.0f, 30.0f);
-    if (this->eco_on_ && !preset_requested) {
+    if (this->eco_on_) {
       this->eco_on_ = false;
     }
   }
@@ -161,10 +156,16 @@ void CountrymodClimate::control(const climate::ClimateCall &call) {
   if (call.get_fan_mode().has_value()) {
     switch (*call.get_fan_mode()) {
       case climate::CLIMATE_FAN_AUTO:
+        this->set_fan_mode_(climate::CLIMATE_FAN_AUTO);
+        break;
       case climate::CLIMATE_FAN_LOW:
+        this->set_custom_fan_speed_(1);
+        break;
       case climate::CLIMATE_FAN_MEDIUM:
+        this->set_custom_fan_speed_(2);
+        break;
       case climate::CLIMATE_FAN_HIGH:
-        this->set_fan_mode_(*call.get_fan_mode());
+        this->set_custom_fan_speed_(5);
         break;
       default:
         ESP_LOGW(TAG, "Unsupported fan mode requested: %s",
@@ -176,35 +177,6 @@ void CountrymodClimate::control(const climate::ClimateCall &call) {
     this->set_custom_fan_mode_(call.get_custom_fan_mode());
   }
 
-  if (preset_requested) {
-    switch (*call.get_preset()) {
-      case climate::CLIMATE_PRESET_ECO:
-        if (!this->supports_cool_) {
-          ESP_LOGW(TAG, "Eco preset requires cool support");
-          break;
-        }
-        this->eco_on_ = true;
-        this->turbo_on_ = false;
-        this->last_on_mode_ = climate::CLIMATE_MODE_COOL;
-        if (this->mode != climate::CLIMATE_MODE_OFF) {
-          this->mode = climate::CLIMATE_MODE_COOL;
-        }
-        break;
-      case climate::CLIMATE_PRESET_BOOST:
-        this->turbo_on_ = true;
-        this->eco_on_ = false;
-        break;
-      case climate::CLIMATE_PRESET_NONE:
-        this->eco_on_ = false;
-        this->turbo_on_ = false;
-        break;
-      default:
-        ESP_LOGW(TAG, "Unsupported preset requested: %s",
-                 LOG_STR_ARG(climate::climate_preset_to_string(*call.get_preset())));
-        break;
-    }
-  }
-
   this->sanitize_state_();
   this->update_action_();
   this->transmit_state();
@@ -212,13 +184,13 @@ void CountrymodClimate::control(const climate::ClimateCall &call) {
   this->publish_option_switches_();
 }
 
-bool CountrymodClimate::set_preset_mode(size_t mode_index) {
+bool CountrymodClimate::set_mode_option(size_t mode_index) {
   switch (mode_index) {
-    case COUNTRYMOD_PRESET_AUTO:
+    case COUNTRYMOD_MODE_AUTO:
       this->eco_on_ = false;
       this->turbo_on_ = false;
       break;
-    case COUNTRYMOD_PRESET_ECO:
+    case COUNTRYMOD_MODE_ECO:
       if (!this->supports_cool_) {
         ESP_LOGW(TAG, "Eco mode requires cool support");
         return false;
@@ -230,7 +202,7 @@ bool CountrymodClimate::set_preset_mode(size_t mode_index) {
         this->mode = climate::CLIMATE_MODE_COOL;
       }
       break;
-    case COUNTRYMOD_PRESET_TURBO:
+    case COUNTRYMOD_MODE_TURBO:
       this->eco_on_ = false;
       this->turbo_on_ = true;
       break;
@@ -249,7 +221,7 @@ bool CountrymodClimate::set_preset_mode(size_t mode_index) {
 
 bool CountrymodClimate::set_turbo(bool turbo_on) {
   if (turbo_on) {
-    return this->set_preset_mode(COUNTRYMOD_PRESET_TURBO);
+    return this->set_mode_option(COUNTRYMOD_MODE_TURBO);
   }
   this->turbo_on_ = false;
   this->sanitize_state_();
@@ -278,7 +250,7 @@ bool CountrymodClimate::set_negative_ion(bool negative_ion_on) {
 
 bool CountrymodClimate::set_eco(bool eco_on) {
   if (eco_on) {
-    return this->set_preset_mode(COUNTRYMOD_PRESET_ECO);
+    return this->set_mode_option(COUNTRYMOD_MODE_ECO);
   }
   this->eco_on_ = false;
   this->sanitize_state_();
@@ -513,7 +485,7 @@ bool CountrymodClimate::apply_lg_frame_(uint32_t frame) {
     this->last_on_mode_ = decoded_mode;
   }
 
-  this->set_fan_mode_(this->fan_mode_from_code_((control >> 4) & 0x03));
+  this->set_fan_from_code_((control >> 4) & 0x03);
   if (!decoded_eco) {
     this->target_temperature = clamp<float>(static_cast<float>(temp_code) + 16.0f, 16.0f, 30.0f);
   }
@@ -607,17 +579,45 @@ uint8_t CountrymodClimate::tail_fan_code_for_transmit_() const {
   return this->fan_speed_for_transmit_();
 }
 
-climate::ClimateFanMode CountrymodClimate::fan_mode_from_code_(uint8_t fan_code) const {
-  switch (fan_code & 0x03) {
+void CountrymodClimate::set_custom_fan_speed_(uint8_t fan_speed) {
+  switch (fan_speed) {
     case 1:
-      return climate::CLIMATE_FAN_LOW;
+      this->set_custom_fan_mode_(COUNTRYMOD_FAN_SPEED_1);
+      break;
     case 2:
-      return climate::CLIMATE_FAN_MEDIUM;
+      this->set_custom_fan_mode_(COUNTRYMOD_FAN_SPEED_2);
+      break;
     case 3:
-      return climate::CLIMATE_FAN_HIGH;
+      this->set_custom_fan_mode_(COUNTRYMOD_FAN_SPEED_3);
+      break;
+    case 4:
+      this->set_custom_fan_mode_(COUNTRYMOD_FAN_SPEED_4);
+      break;
+    case 5:
+      this->set_custom_fan_mode_(COUNTRYMOD_FAN_SPEED_5);
+      break;
     case 0:
     default:
-      return climate::CLIMATE_FAN_AUTO;
+      this->set_fan_mode_(climate::CLIMATE_FAN_AUTO);
+      break;
+  }
+}
+
+void CountrymodClimate::set_fan_from_code_(uint8_t fan_code) {
+  switch (fan_code & 0x03) {
+    case 1:
+      this->set_custom_fan_speed_(1);
+      break;
+    case 2:
+      this->set_custom_fan_speed_(2);
+      break;
+    case 3:
+      this->set_custom_fan_speed_(3);
+      break;
+    case 0:
+    default:
+      this->set_fan_mode_(climate::CLIMATE_FAN_AUTO);
+      break;
   }
 }
 
@@ -642,11 +642,11 @@ void CountrymodClimate::publish_mode_select_() {
   }
 
   if (this->eco_on_) {
-    this->mode_select_->publish_state(COUNTRYMOD_PRESET_ECO_OPTION);
+    this->mode_select_->publish_state(COUNTRYMOD_MODE_ECO);
   } else if (this->turbo_on_) {
-    this->mode_select_->publish_state(COUNTRYMOD_PRESET_TURBO_OPTION);
+    this->mode_select_->publish_state(COUNTRYMOD_MODE_TURBO);
   } else {
-    this->mode_select_->publish_state(COUNTRYMOD_PRESET_AUTO_OPTION);
+    this->mode_select_->publish_state(COUNTRYMOD_MODE_AUTO);
   }
 }
 
@@ -668,15 +668,6 @@ void CountrymodClimate::update_action_() {
   }
 }
 
-void CountrymodClimate::update_preset_() {
-  if (this->eco_on_) {
-    this->set_preset_(climate::CLIMATE_PRESET_ECO);
-  } else if (this->turbo_on_) {
-    this->set_preset_(climate::CLIMATE_PRESET_BOOST);
-  } else {
-    this->set_preset_(climate::CLIMATE_PRESET_NONE);
-  }
-}
 
 void CountrymodClimate::sanitize_state_() {
   if ((this->last_on_mode_ == climate::CLIMATE_MODE_COOL && !this->supports_cool_) ||
@@ -722,9 +713,15 @@ void CountrymodClimate::sanitize_state_() {
   } else {
     switch (*this->fan_mode) {
       case climate::CLIMATE_FAN_AUTO:
+        break;
       case climate::CLIMATE_FAN_LOW:
+        this->set_custom_fan_speed_(1);
+        break;
       case climate::CLIMATE_FAN_MEDIUM:
+        this->set_custom_fan_speed_(2);
+        break;
       case climate::CLIMATE_FAN_HIGH:
+        this->set_custom_fan_speed_(5);
         break;
       default:
         this->set_fan_mode_(climate::CLIMATE_FAN_AUTO);
@@ -750,7 +747,8 @@ void CountrymodClimate::sanitize_state_() {
       this->mode = climate::CLIMATE_MODE_COOL;
     }
   }
-  this->update_preset_();
+  this->preset.reset();
+  this->clear_custom_preset_();
 }
 
 void CountrymodButton::press_action() {
@@ -778,7 +776,7 @@ void CountrymodModeSelect::control(size_t index) {
     return;
   }
 
-  if (!this->get_parent()->set_preset_mode(index)) {
+  if (!this->get_parent()->set_mode_option(index)) {
     ESP_LOGW(TAG, "Failed to write Countrymod mode select state");
   }
 }

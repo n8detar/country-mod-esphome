@@ -1,22 +1,13 @@
 # Countrymod RV AC ESPHome Component
 
-ESPHome external component for the Countrymod RV AC IR protocol decoded from
-`remote.lg` receiver captures.
+ESPHome external component for Countrymod RV air conditioners that use the
+YAP0F/YAP0F3 handheld IR remote protocol.
 
-This project is entirely vibe-coded and provided as-is. Use it at your own risk.
-
-The protocol is full-state: each update sends two state packets. The component
-keeps the current climate state locally, builds both packet variants, and
-transmits the pair as one raw IR sequence.
-
-Climate packets are much longer than the one-off display and voltage commands.
-The example uses `rmt_symbols: 192`, `non_blocking: false`, and the captured 40 ms
-packet gap so the two full-state packets are transmitted as one raw IR sequence.
-
-ESPHome's receiver identifies the first 32 bits as `remote.lg`, but the physical
-remote transmits those bits as a Countrymod burst with a 9 ms / 4.5 ms header,
-a fixed `010` separator, a second 32-bit tail block, and the captured
-Countrymod/YAP0F timing rather than ESPHome's generic LG timing.
+The protocol is full-state. A normal climate command sends two complete state
+packets, not a short button command. ESPHome's receiver often reports the first
+32 bits as `remote.lg`, but this component transmits the complete Countrymod
+packet structure, including the trailer bits, hidden tail data, and captured
+packet timing needed for reliable climate control.
 
 ## Example
 
@@ -24,9 +15,13 @@ Countrymod/YAP0F timing rather than ESPHome's generic LG timing.
 esphome:
   name: countrymod-rv-ac
   friendly_name: Countrymod RV AC
-  devices:
-    - id: rv_ac_device
-      name: RV AC
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+logger:
 
 external_components:
   - source: github://n8detar/country-mod-esphome@main
@@ -43,72 +38,236 @@ climate:
   - platform: countrymod
     id: rv_ac
     name: Climate
-    device_id: rv_ac_device
     transmitter_id: ir_tx
     supports_heat: false
-    inter_frame_delay: 40ms
-    use_power_bit: true
 
 select:
   - platform: countrymod
     countrymod_id: rv_ac
     name: Mode
-    device_id: rv_ac_device
 
 switch:
   - platform: countrymod
     countrymod_id: rv_ac
     type: night
     name: Night
-    device_id: rv_ac_device
 
   - platform: countrymod
     countrymod_id: rv_ac
     type: negative_ion
     name: Negative Ion
-    device_id: rv_ac_device
-    disabled_by_default: true
-
-  - platform: countrymod
-    countrymod_id: rv_ac
-    type: auxiliary
-    name: Auxiliary Function
-    device_id: rv_ac_device
-    disabled_by_default: true
 
 button:
   - platform: countrymod
     countrymod_id: rv_ac
     type: display
     name: Display
-    device_id: rv_ac_device
 
   - platform: countrymod
     countrymod_id: rv_ac
     type: view_voltage
     name: View Voltage
-    device_id: rv_ac_device
-
-  - platform: countrymod
-    countrymod_id: rv_ac
-    type: light
-    name: Light
-    device_id: rv_ac_device
-    disabled_by_default: true
 ```
 
-The `device_id` entries are optional, but when present they put the climate,
-select, switches, and buttons under the `RV AC` sub-device in Home Assistant
-instead of the ESP controller device.
+`rmt_symbols: 192` is recommended because each climate transmit contains two
+long full-state packets. `non_blocking: false` keeps the packets together as one
+IR sequence.
 
-Supported climate modes are `OFF`, `COOL`, `HEAT`, and `FAN_ONLY`. Set
-`supports_heat: false` to hide heat mode and ignore received heat frames on
-cool-only units. Fan control exposes standard `AUTO` plus custom fan modes
-`Speed 1` through `Speed 5`, matching the handheld remote. The first 32-bit
-decode uses the protocol's shared code for display speeds 3/4/5, while the
-hidden 32-bit tail selects the exact fan speed.
+Set `supports_heat: false` for cool-only units. Omit it, or set it to `true`, if
+your unit responds to heat commands.
 
-Captured cool-mode fan packets at 72F:
+## Entities
+
+| Platform | Type | Purpose |
+| --- | --- | --- |
+| `climate.countrymod` | `Climate` | Power, HVAC mode, target temperature, and fan speed. |
+| `select.countrymod` | `Mode` | Remote mode selector: `Auto`, `Eco`, or `Turbo`. |
+| `switch.countrymod` | `night` | Night/sleep flag. |
+| `switch.countrymod` | `negative_ion` | Negative Ion flag from the remote/manual. |
+| `switch.countrymod` | `auxiliary` | Undocumented full-state flag at protocol bit `0x80`. |
+| `button.countrymod` | `display` | Sends the `DISP.` screen-display command. |
+| `button.countrymod` | `view_voltage` | Sends the View Voltage command. |
+| `button.countrymod` | `light` | Sends the crossed-out lightbulb command. |
+
+The `Mode` select is the canonical control for the remote's `AUTO`, `ECO`, and
+`TURBO` buttons. `Auto` means both Eco and Turbo protocol flags are off; it is
+not the same thing as a separate climate auto HVAC mode. Eco and Turbo are
+mutually exclusive.
+
+Fan control exposes standard `Auto` plus custom fan speeds `Speed 1` through
+`Speed 5`, matching the handheld remote. The captured first frame only carries a
+2-bit display fan code, so fan speeds 3, 4, and 5 share the same first-frame
+code. The second 32-bit tail stores the exact fan speed.
+
+Home Assistant can show Fahrenheit while ESPHome stores temperatures in Celsius.
+The protocol range is 16-30 C, equivalent to roughly 61-86 F.
+
+## Configuration
+
+### Climate
+
+```yaml
+climate:
+  - platform: countrymod
+    id: rv_ac
+    name: Climate
+    transmitter_id: ir_tx
+```
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `transmitter_id` | required | Remote transmitter used for IR output. |
+| `receiver_id` | optional | Remote receiver used to observe handheld remote packets. |
+| `supports_cool` | `true` | Exposes cool mode and accepts cool frames. |
+| `supports_heat` | `true` | Exposes heat mode and accepts heat frames. |
+| `inter_frame_delay` | `40ms` | Gap between the two full-state climate packets. |
+| `use_power_bit` | `true` | Uses protocol bit `0x08` to distinguish on/off climate frames. |
+| `feature_as_swing` | `false` | Deprecated compatibility option; ignored. |
+
+`inter_frame_delay: 40ms` matches the YAP0F/YAP0F3 captures used for this
+component. The older experimental value `7ms` is treated as `40ms` for backward
+compatibility. Very large values are also clamped back to the captured default.
+
+### Mode Select
+
+```yaml
+select:
+  - platform: countrymod
+    countrymod_id: rv_ac
+    name: Mode
+```
+
+Options are `Auto`, `Eco`, and `Turbo`. `Auto` is the default state at startup
+unless a received packet enables Eco or Turbo.
+
+### Switches
+
+```yaml
+switch:
+  - platform: countrymod
+    countrymod_id: rv_ac
+    type: night
+    name: Night
+```
+
+Supported switch types are:
+
+| Type | Description |
+| --- | --- |
+| `night` | Night/sleep flag. |
+| `negative_ion` | Negative Ion flag. |
+| `auxiliary` | Undocumented full-state flag. |
+| `eco` | Legacy direct Eco switch. Prefer the `Mode` select. |
+| `turbo` | Legacy direct Turbo switch. Prefer the `Mode` select. |
+| `feature` | Legacy alias for `negative_ion`. |
+| `airflow` | Legacy alias for `auxiliary`. |
+
+### Buttons
+
+```yaml
+button:
+  - platform: countrymod
+    countrymod_id: rv_ac
+    type: display
+    name: Display
+```
+
+Supported button types are:
+
+| Type | Command frame | Description |
+| --- | --- | --- |
+| `display` | `0x22AA66EE` | Screen display command. |
+| `view_voltage` | `0x55DD33BB` | View Voltage command. |
+| `light` | `0x008844CC` | Crossed-out lightbulb command. |
+| `zigzag` | `0x55DD33BB` | Legacy alias for `view_voltage`. |
+
+## Optional Receiver
+
+A receiver is not required for transmit-only control. If configured, the climate
+entity can observe handheld remote climate packets and update optimistic state
+from the first decoded frame. Because speeds 3-5 share the same first-frame fan
+code, receiver sync reports that code as `Speed 3` unless a future decoder also
+parses the hidden tail.
+
+```yaml
+remote_receiver:
+  id: ir_rx
+  pin:
+    number: GPIO21
+    inverted: true
+    mode:
+      input: true
+      pullup: true
+  dump: lg
+
+climate:
+  - platform: countrymod
+    id: rv_ac
+    name: Climate
+    transmitter_id: ir_tx
+    receiver_id: ir_rx
+```
+
+ESPHome may also log JVC, LG, Pronto, or raw decodes for the same burst. The LG
+line is useful for identifying the first 32-bit frame, but the raw/pronto data is
+needed to confirm the hidden tail and timing.
+
+## Protocol Notes
+
+### Timing
+
+Countrymod climate packets use a 38 kHz carrier and NEC/LG-like pulse timings:
+
+| Segment | Timing |
+| --- | --- |
+| Header mark | 9000 us |
+| Header space | 4500 us |
+| Bit mark | 560 us |
+| Zero space | 520 us |
+| One space | 1690 us |
+| Frame-to-tail space | 20000 us |
+| Default packet gap | 40000 us |
+| Final frame gap | 25300 us |
+
+A one-shot command is a single 32-bit frame plus a fixed `010` trailer. A climate
+packet is a 32-bit frame plus the `010` trailer, followed by a 32-bit tail. A
+full climate update sends two climate packets: first marker `0x58`, then second
+marker `0x78`.
+
+### State Layout
+
+The component builds an 8-byte logical state, computes the checksum, reverses the
+bits in each byte, then transmits the first four bytes as the LG-like frame and
+the last four bytes as the tail.
+
+| Byte | Field |
+| --- | --- |
+| `0` | Control byte: mode, power, fan display code, Negative Ion, Night. |
+| `1` | Temperature code, normally Celsius minus 16. Eco uses fixed code `0x08`. |
+| `2` | Flags: `0x10` Turbo, `0x80` auxiliary. |
+| `3` | Packet marker: `0x58` first packet, `0x78` second packet. |
+| `4` | Reserved, currently `0x00`. |
+| `5` | First packet uses `0x20`; second packet uses `0x00`. |
+| `6` | Second packet exact fan speed in the high nibble. |
+| `7` | Checksum in the high nibble; Eco second packet uses low nibble `0x03`. |
+
+Control byte low bits:
+
+| Bits | Meaning |
+| --- | --- |
+| `0..2` | Mode base: `0x00` Eco, `0x01` Cool, `0x03` Fan Only, `0x04` Heat. |
+| `3` | Power/on bit when `use_power_bit` is enabled. |
+| `4..5` | Display fan code: Auto `0`, Speed 1 `1`, Speed 2 `2`, Speed 3-5 `3`. |
+| `6` | Negative Ion. |
+| `7` | Night. |
+
+Checksum starts at `0x0A`, adds the low nibbles of bytes 0-3 and the high
+nibbles of bytes 5-7, then stores the low 4 bits of the sum in byte 7 high
+nibble.
+
+### Captured Fan Examples
+
+Cool mode at 72 F / 22 C, power on, no Eco/Turbo/Night/Negative Ion:
 
 | Fan setting | First packet | Second packet |
 | --- | --- | --- |
@@ -119,28 +278,5 @@ Captured cool-mode fan packets at 72F:
 | Speed 4 | `9C60001A/0004000C` | `9C60001E/0000020A` |
 | Speed 5 | `9C60001A/0004000C` | `9C60001E/00000A06` |
 
-The remote's main `AUTO`, `ECO`, and `TURBO` modes are exposed as a select entity
-with options `Auto`, `Eco`, and `Turbo`. `Auto` is the default state with both
-ECO and Turbo disabled. The older `eco` and `turbo` switch types remain accepted
-for existing configs, but the select is preferred because those modes are
-mutually exclusive. `Turbo` transmits the turbo flag with the captured max-fan IR
-fields.
-
-`use_power_bit: true` matches handheld captures where ON climate frames decode
-as `0x9060...` and matching OFF frames decode as `0x8060...`. If your remote
-never uses the `0x08` control bit, set `use_power_bit: false`.
-
-Protocol bit `0x40` is exposed as `negative_ion`, matching the manual. The older
-`feature` switch type remains accepted as an alias. `feature_as_swing` is still
-accepted for old configs but is ignored because the manual does not list swing as
-an IR function.
-
-The `display` button sends the `DISP.` screen-display command. The
-`view_voltage` button sends the command labeled View Voltage; the older `zigzag`
-button type remains accepted as an alias.
-
-The crossed-out lightbulb button and the horizontal-line/three-squiggle full-state
-flag do not appear to do anything on this model. Omit those entities entirely, or
-include `disabled_by_default: true` as shown above. The unused full-state flag is
-available as `auxiliary`; the older `airflow` switch type remains accepted as an
-alias.
+`Turbo` uses the protocol turbo flag and transmits with max-fan fields. `Eco`
+uses the Eco mode base and the Eco tail nibble.
