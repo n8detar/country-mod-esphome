@@ -3,17 +3,7 @@ from esphome.components import switch
 import esphome.config_validation as cv
 
 from .climate import CountrymodClimate, countrymod_ns
-from .const import (
-    CONF_COUNTRYMOD_ID,
-    CONF_TYPE,
-    TYPE_AIRFLOW,
-    TYPE_AUXILIARY,
-    TYPE_ECO,
-    TYPE_FEATURE,
-    TYPE_NEGATIVE_ION,
-    TYPE_NIGHT,
-    TYPE_TURBO,
-)
+from .const import CONF_COUNTRYMOD_ID, CONF_TYPE, TYPE_NEGATIVE_ION, TYPE_NIGHT
 
 CountrymodSwitch = countrymod_ns.class_(
     "CountrymodSwitch", switch.Switch, cg.Parented.template(CountrymodClimate)
@@ -21,12 +11,7 @@ CountrymodSwitch = countrymod_ns.class_(
 CountrymodSwitchKind = countrymod_ns.enum("CountrymodSwitchKind")
 
 SWITCH_TYPES = {
-    TYPE_AIRFLOW: CountrymodSwitchKind.COUNTRYMOD_SWITCH_AIRFLOW,
-    TYPE_AUXILIARY: CountrymodSwitchKind.COUNTRYMOD_SWITCH_AIRFLOW,
-    TYPE_ECO: CountrymodSwitchKind.COUNTRYMOD_SWITCH_ECO,
-    TYPE_TURBO: CountrymodSwitchKind.COUNTRYMOD_SWITCH_TURBO,
     TYPE_NIGHT: CountrymodSwitchKind.COUNTRYMOD_SWITCH_NIGHT,
-    TYPE_FEATURE: CountrymodSwitchKind.COUNTRYMOD_SWITCH_NEGATIVE_ION,
     TYPE_NEGATIVE_ION: CountrymodSwitchKind.COUNTRYMOD_SWITCH_NEGATIVE_ION,
 }
 
@@ -48,12 +33,7 @@ async def to_code(config):
     await cg.register_parented(var, parent)
 
     setter = {
-        TYPE_AIRFLOW: "set_airflow_switch",
-        TYPE_AUXILIARY: "set_airflow_switch",
-        TYPE_ECO: "set_eco_switch",
-        TYPE_TURBO: "set_turbo_switch",
         TYPE_NIGHT: "set_night_switch",
-        TYPE_FEATURE: "set_negative_ion_switch",
         TYPE_NEGATIVE_ION: "set_negative_ion_switch",
     }[config[CONF_TYPE]]
     cg.add(getattr(parent, setter)(var))

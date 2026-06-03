@@ -1,6 +1,5 @@
 #include "countrymod.h"
 
-#include "esphome/components/remote_base/lg_protocol.h"
 #include "esphome/core/helpers.h"
 #include "esphome/core/log.h"
 #include "esphome/core/version.h"
@@ -21,7 +20,6 @@ static constexpr uint8_t POWER_BIT = 0x08;
 static constexpr uint8_t NEGATIVE_ION_BIT = 0x40;
 static constexpr uint8_t NIGHT_BIT = 0x80;
 static constexpr uint8_t TURBO_FLAG = 0x10;
-static constexpr uint8_t AIRFLOW_FLAG = 0x80;
 static constexpr uint8_t ECO_TEMP_CODE = 0x08;
 
 static constexpr uint8_t FIRST_PACKET_MARKER = 0x58;
@@ -36,7 +34,6 @@ static constexpr uint32_t COUNTRYMOD_ZERO_SPACE_US = 520;
 static constexpr uint32_t COUNTRYMOD_MESSAGE_SPACE_US = 20000;
 static constexpr uint32_t COUNTRYMOD_FRAME_GAP_US = 25300;
 static constexpr uint32_t COUNTRYMOD_PACKET_GAP_US = 40000;
-static constexpr uint32_t COUNTRYMOD_MAX_PACKET_GAP_US = 120000;
 static constexpr uint8_t COUNTRYMOD_TRAILER_BITS = 0b010;
 static constexpr uint8_t COUNTRYMOD_TRAILER_NBITS = 3;
 static constexpr uint8_t COUNTRYMOD_FRAME_NBITS = 32 + COUNTRYMOD_TRAILER_NBITS;
@@ -70,19 +67,9 @@ void CountrymodClimate::dump_config() {
   LOG_CLIMATE("", "Countrymod Climate", this);
   ESP_LOGCONFIG(TAG, "  Climate packet gap: %" PRIu32 " us", this->packet_gap_us_());
   ESP_LOGCONFIG(TAG, "  Use power bit: %s", this->use_power_bit_ ? "yes" : "no");
-  if (this->configured_packet_gap_us_() > COUNTRYMOD_MAX_PACKET_GAP_US) {
-    ESP_LOGW(TAG, "  Configured inter_frame_delay is outside the captured range; using %" PRIu32 " us instead",
-             COUNTRYMOD_PACKET_GAP_US);
-  }
-  if (this->feature_as_swing_) {
-    ESP_LOGW(TAG, "  feature_as_swing is deprecated and ignored; use the negative_ion switch instead");
-  }
   LOG_SELECT("  ", "Mode Select", this->mode_select_);
-  LOG_SWITCH("  ", "Turbo Switch", this->turbo_switch_);
   LOG_SWITCH("  ", "Night Switch", this->night_switch_);
   LOG_SWITCH("  ", "Negative Ion Switch", this->negative_ion_switch_);
-  LOG_SWITCH("  ", "Eco Switch", this->eco_switch_);
-  LOG_SWITCH("  ", "Airflow Switch", this->airflow_switch_);
 }
 
 climate::ClimateTraits CountrymodClimate::traits() {
@@ -219,19 +206,6 @@ bool CountrymodClimate::set_mode_option(size_t mode_index) {
   return true;
 }
 
-bool CountrymodClimate::set_turbo(bool turbo_on) {
-  if (turbo_on) {
-    return this->set_mode_option(COUNTRYMOD_MODE_TURBO);
-  }
-  this->turbo_on_ = false;
-  this->sanitize_state_();
-  this->update_action_();
-  this->transmit_state();
-  this->publish_state();
-  this->publish_option_switches_();
-  return true;
-}
-
 bool CountrymodClimate::set_night(bool night_on) {
   this->night_on_ = night_on;
   this->transmit_state();
@@ -242,27 +216,6 @@ bool CountrymodClimate::set_night(bool night_on) {
 
 bool CountrymodClimate::set_negative_ion(bool negative_ion_on) {
   this->negative_ion_on_ = negative_ion_on;
-  this->transmit_state();
-  this->publish_state();
-  this->publish_option_switches_();
-  return true;
-}
-
-bool CountrymodClimate::set_eco(bool eco_on) {
-  if (eco_on) {
-    return this->set_mode_option(COUNTRYMOD_MODE_ECO);
-  }
-  this->eco_on_ = false;
-  this->sanitize_state_();
-  this->update_action_();
-  this->transmit_state();
-  this->publish_state();
-  this->publish_option_switches_();
-  return true;
-}
-
-bool CountrymodClimate::set_airflow(bool airflow_on) {
-  this->airflow_on_ = airflow_on;
   this->transmit_state();
   this->publish_state();
   this->publish_option_switches_();
@@ -299,23 +252,37 @@ void CountrymodClimate::transmit_state() {
 }
 
 bool CountrymodClimate::on_receive(remote_base::RemoteReceiveData data) {
-  auto decoded = remote_base::LGProtocol().decode(data);
-  if (!decoded.has_value() || decoded->nbits != 32) {
-    return false;
+  bool decoded = false;
+
+  while (data.is_valid()) {
+    uint32_t frame = 0;
+    if (!this->decode_countrymod_frame_(data, &frame)) {
+      break;
+    }
+
+    if (frame == LIGHT_COMMAND_FRAME) {
+      ESP_LOGD(TAG, "Received Countrymod light command: 0x%08" PRIX32, frame);
+      decoded = true;
+    } else if (frame == DISPLAY_COMMAND_FRAME) {
+      ESP_LOGD(TAG, "Received Countrymod display command: 0x%08" PRIX32, frame);
+      decoded = true;
+    } else if (frame == VIEW_VOLTAGE_COMMAND_FRAME) {
+      ESP_LOGD(TAG, "Received Countrymod view voltage command: 0x%08" PRIX32, frame);
+      decoded = true;
+    } else {
+      uint32_t tail = 0;
+      if (!this->decode_countrymod_tail_(data, &tail)) {
+        return decoded;
+      }
+      decoded = this->apply_countrymod_packet_(frame, tail) || decoded;
+    }
+
+    if (data.is_valid() && data.peek_space_at_least(5000)) {
+      data.advance();
+    }
   }
-  if (decoded->data == LIGHT_COMMAND_FRAME) {
-    ESP_LOGD(TAG, "Received Countrymod light command: 0x%08" PRIX32, decoded->data);
-    return true;
-  }
-  if (decoded->data == DISPLAY_COMMAND_FRAME) {
-    ESP_LOGD(TAG, "Received Countrymod display command: 0x%08" PRIX32, decoded->data);
-    return true;
-  }
-  if (decoded->data == VIEW_VOLTAGE_COMMAND_FRAME) {
-    ESP_LOGD(TAG, "Received Countrymod view voltage command: 0x%08" PRIX32, decoded->data);
-    return true;
-  }
-  return this->apply_lg_frame_(decoded->data);
+
+  return decoded;
 }
 
 uint8_t CountrymodClimate::rev8_(uint8_t value) {
@@ -359,9 +326,6 @@ void CountrymodClimate::build_state_(bool second_packet, uint8_t *state) const {
   uint8_t flags = 0x00;
   if (this->turbo_on_) {
     flags |= TURBO_FLAG;
-  }
-  if (this->airflow_on_) {
-    flags |= AIRFLOW_FLAG;
   }
   const uint8_t marker = second_packet ? SECOND_PACKET_MARKER : FIRST_PACKET_MARKER;
 
@@ -443,36 +407,114 @@ void CountrymodClimate::encode_countrymod_climate_packet_(remote_base::RemoteTra
   this->encode_countrymod_tail_(dst, tail, final_gap_us);
 }
 
-uint32_t CountrymodClimate::configured_packet_gap_us_() const { return this->inter_frame_delay_ms_ * 1000UL; }
+uint32_t CountrymodClimate::packet_gap_us_() const { return this->inter_frame_delay_ms_ * 1000UL; }
 
-uint32_t CountrymodClimate::packet_gap_us_() const {
-  const uint32_t configured_gap_us = this->configured_packet_gap_us_();
-  if (configured_gap_us == 7000 || configured_gap_us > COUNTRYMOD_MAX_PACKET_GAP_US) {
-    return COUNTRYMOD_PACKET_GAP_US;
+bool CountrymodClimate::decode_countrymod_bit_(remote_base::RemoteReceiveData &src, bool *bit) const {
+  if (src.expect_item(COUNTRYMOD_BIT_MARK_US, COUNTRYMOD_ONE_SPACE_US)) {
+    *bit = true;
+    return true;
   }
-  return configured_gap_us;
+  if (src.expect_item(COUNTRYMOD_BIT_MARK_US, COUNTRYMOD_ZERO_SPACE_US)) {
+    *bit = false;
+    return true;
+  }
+  return false;
 }
 
-bool CountrymodClimate::apply_lg_frame_(uint32_t frame) {
-  const uint8_t control = rev8_((frame >> 24) & 0xFF);
-  const uint8_t temp_code = rev8_((frame >> 16) & 0xFF);
-  const uint8_t flags = rev8_((frame >> 8) & 0xFF);
-  const uint8_t marker = rev8_(frame & 0xFF);
+bool CountrymodClimate::decode_countrymod_frame_(remote_base::RemoteReceiveData &src, uint32_t *frame) const {
+  if (!src.expect_item(COUNTRYMOD_HEADER_MARK_US, COUNTRYMOD_HEADER_SPACE_US)) {
+    return false;
+  }
 
+  uint64_t burst = 0;
+  for (uint8_t i = 0; i < COUNTRYMOD_FRAME_NBITS; i++) {
+    bool bit = false;
+    if (!this->decode_countrymod_bit_(src, &bit)) {
+      return false;
+    }
+    burst = (burst << 1) | (bit ? 1 : 0);
+  }
+
+  const uint8_t trailer_mask = (1u << COUNTRYMOD_TRAILER_NBITS) - 1u;
+  if ((burst & trailer_mask) != COUNTRYMOD_TRAILER_BITS) {
+    ESP_LOGV(TAG, "Ignoring Countrymod frame with invalid trailer 0x%02" PRIX64, burst & trailer_mask);
+    return false;
+  }
+  if (!src.expect_mark(COUNTRYMOD_BIT_MARK_US)) {
+    return false;
+  }
+
+  *frame = static_cast<uint32_t>(burst >> COUNTRYMOD_TRAILER_NBITS);
+  return true;
+}
+
+bool CountrymodClimate::decode_countrymod_tail_(remote_base::RemoteReceiveData &src, uint32_t *tail) const {
+  if (!src.expect_space(COUNTRYMOD_MESSAGE_SPACE_US)) {
+    return false;
+  }
+
+  uint32_t value = 0;
+  for (uint8_t i = 0; i < COUNTRYMOD_TAIL_NBITS; i++) {
+    bool bit = false;
+    if (!this->decode_countrymod_bit_(src, &bit)) {
+      return false;
+    }
+    value = (value << 1) | (bit ? 1 : 0);
+  }
+  if (!src.expect_mark(COUNTRYMOD_BIT_MARK_US)) {
+    return false;
+  }
+
+  *tail = value;
+  return true;
+}
+
+bool CountrymodClimate::apply_countrymod_packet_(uint32_t frame, uint32_t tail) {
+  uint8_t state[8];
+  state[0] = rev8_((frame >> 24) & 0xFF);
+  state[1] = rev8_((frame >> 16) & 0xFF);
+  state[2] = rev8_((frame >> 8) & 0xFF);
+  state[3] = rev8_(frame & 0xFF);
+  state[4] = rev8_((tail >> 24) & 0xFF);
+  state[5] = rev8_((tail >> 16) & 0xFF);
+  state[6] = rev8_((tail >> 8) & 0xFF);
+  state[7] = rev8_(tail & 0xFF);
+
+  const uint8_t marker = state[3];
   if (marker != FIRST_PACKET_MARKER && marker != SECOND_PACKET_MARKER) {
     return false;
   }
 
+  uint8_t checksum_state[8];
+  for (uint8_t i = 0; i < 8; i++) {
+    checksum_state[i] = state[i];
+  }
+  const uint8_t checksum = (checksum_state[7] & 0xF0) >> 4;
+  checksum_state[7] &= 0x0F;
+  if (this->checksum_for_state_(checksum_state) != checksum) {
+    ESP_LOGV(TAG, "Ignoring Countrymod packet with invalid checksum: 0x%08" PRIX32 "/0x%08" PRIX32, frame, tail);
+    return false;
+  }
+
+  if ((marker == FIRST_PACKET_MARKER && state[5] != 0x20) ||
+      (marker == SECOND_PACKET_MARKER && state[5] != 0x00)) {
+    ESP_LOGV(TAG, "Ignoring Countrymod packet with invalid tail marker: 0x%08" PRIX32 "/0x%08" PRIX32, frame, tail);
+    return false;
+  }
+
+  const uint8_t control = state[0];
+  const uint8_t temp_code = state[1];
+  const uint8_t flags = state[2];
   const uint8_t mode_base = control & 0x07;
   const bool decoded_eco = mode_base == MODE_BASE_ECO;
   const climate::ClimateMode decoded_mode = decoded_eco ? climate::CLIMATE_MODE_COOL : this->mode_from_base_(mode_base);
   if (decoded_mode == climate::CLIMATE_MODE_OFF) {
-    ESP_LOGV(TAG, "Ignoring Countrymod frame with unknown mode base 0x%02X", mode_base);
+    ESP_LOGV(TAG, "Ignoring Countrymod packet with unknown mode base 0x%02X", mode_base);
     return false;
   }
   if ((decoded_mode == climate::CLIMATE_MODE_COOL && !this->supports_cool_) ||
       (decoded_mode == climate::CLIMATE_MODE_HEAT && !this->supports_heat_)) {
-    ESP_LOGV(TAG, "Ignoring Countrymod frame with disabled mode %s",
+    ESP_LOGV(TAG, "Ignoring Countrymod packet with disabled mode %s",
              LOG_STR_ARG(climate::climate_mode_to_string(decoded_mode)));
     return false;
   }
@@ -485,7 +527,14 @@ bool CountrymodClimate::apply_lg_frame_(uint32_t frame) {
     this->last_on_mode_ = decoded_mode;
   }
 
-  this->set_fan_from_code_((control >> 4) & 0x03);
+  const uint8_t display_fan_code = (control >> 4) & 0x03;
+  const uint8_t tail_fan_speed = (state[6] >> 4) & 0x0F;
+  if (marker == SECOND_PACKET_MARKER && tail_fan_speed <= 5) {
+    this->set_custom_fan_speed_(tail_fan_speed);
+  } else {
+    this->set_fan_from_code_(display_fan_code);
+  }
+
   if (!decoded_eco) {
     this->target_temperature = clamp<float>(static_cast<float>(temp_code) + 16.0f, 16.0f, 30.0f);
   }
@@ -493,11 +542,10 @@ bool CountrymodClimate::apply_lg_frame_(uint32_t frame) {
   this->night_on_ = (control & NIGHT_BIT) != 0;
   this->turbo_on_ = (flags & TURBO_FLAG) != 0;
   this->eco_on_ = decoded_eco && !this->turbo_on_;
-  this->airflow_on_ = (flags & AIRFLOW_FLAG) != 0;
 
   this->sanitize_state_();
   this->update_action_();
-  ESP_LOGD(TAG, "Decoded Countrymod frame 0x%08" PRIX32, frame);
+  ESP_LOGD(TAG, "Decoded Countrymod packet 0x%08" PRIX32 "/0x%08" PRIX32, frame, tail);
   this->publish_state();
   this->publish_option_switches_();
   return true;
@@ -622,11 +670,8 @@ void CountrymodClimate::set_fan_from_code_(uint8_t fan_code) {
 }
 
 void CountrymodClimate::publish_option_switches_() {
-  this->publish_option_switch_(this->turbo_switch_, this->turbo_on_);
   this->publish_option_switch_(this->night_switch_, this->night_on_);
   this->publish_option_switch_(this->negative_ion_switch_, this->negative_ion_on_);
-  this->publish_option_switch_(this->eco_switch_, this->eco_on_);
-  this->publish_option_switch_(this->airflow_switch_, this->airflow_on_);
   this->publish_mode_select_();
 }
 
@@ -667,7 +712,6 @@ void CountrymodClimate::update_action_() {
       break;
   }
 }
-
 
 void CountrymodClimate::sanitize_state_() {
   if ((this->last_on_mode_ == climate::CLIMATE_MODE_COOL && !this->supports_cool_) ||
@@ -789,20 +833,11 @@ void CountrymodSwitch::write_state(bool state) {
 
   bool ok = false;
   switch (this->kind_) {
-    case COUNTRYMOD_SWITCH_TURBO:
-      ok = this->get_parent()->set_turbo(state);
-      break;
     case COUNTRYMOD_SWITCH_NIGHT:
       ok = this->get_parent()->set_night(state);
       break;
     case COUNTRYMOD_SWITCH_NEGATIVE_ION:
       ok = this->get_parent()->set_negative_ion(state);
-      break;
-    case COUNTRYMOD_SWITCH_ECO:
-      ok = this->get_parent()->set_eco(state);
-      break;
-    case COUNTRYMOD_SWITCH_AIRFLOW:
-      ok = this->get_parent()->set_airflow(state);
       break;
   }
 
