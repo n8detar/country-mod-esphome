@@ -10,7 +10,7 @@ keeps the current climate state locally, builds both packet variants, and
 transmits the pair as one raw IR sequence.
 
 Climate packets are much longer than the one-off display and voltage commands.
-The example uses `rmt_symbols: 192`, `non_blocking: false`, and a short YAP0F
+The example uses `rmt_symbols: 192`, `non_blocking: false`, and the captured 40 ms
 packet gap so the two full-state packets are transmitted as one raw IR sequence.
 
 ESPHome's receiver identifies the first 32 bits as `remote.lg`, but the physical
@@ -46,7 +46,7 @@ climate:
     device_id: rv_ac_device
     transmitter_id: ir_tx
     supports_heat: false
-    inter_frame_delay: 7ms
+    inter_frame_delay: 40ms
     use_power_bit: true
 
 switch:

@@ -98,7 +98,7 @@ class CountrymodClimate : public climate_ir::ClimateIR {
   bool airflow_on_{false};
   bool feature_as_swing_{false};
   bool use_power_bit_{true};
-  uint32_t inter_frame_delay_ms_{7};
+  uint32_t inter_frame_delay_ms_{40};
 
   switch_::Switch *turbo_switch_{nullptr};
   switch_::Switch *night_switch_{nullptr};

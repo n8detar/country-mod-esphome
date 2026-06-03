@@ -14,7 +14,7 @@ CONF_USE_POWER_BIT = "use_power_bit"
 CONFIG_SCHEMA = climate_ir.climate_ir_with_receiver_schema(CountrymodClimate).extend(
     {
         cv.Optional(CONF_FEATURE_AS_SWING, default=False): cv.boolean,
-        cv.Optional(CONF_INTER_FRAME_DELAY, default="7ms"): cv.positive_time_period_milliseconds,
+        cv.Optional(CONF_INTER_FRAME_DELAY, default="40ms"): cv.positive_time_period_milliseconds,
         cv.Optional(CONF_USE_POWER_BIT, default=True): cv.boolean,
     }
 )

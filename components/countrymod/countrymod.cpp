@@ -35,8 +35,8 @@ static constexpr uint32_t COUNTRYMOD_ONE_SPACE_US = 1690;
 static constexpr uint32_t COUNTRYMOD_ZERO_SPACE_US = 520;
 static constexpr uint32_t COUNTRYMOD_MESSAGE_SPACE_US = 20000;
 static constexpr uint32_t COUNTRYMOD_FRAME_GAP_US = 25300;
-static constexpr uint32_t COUNTRYMOD_YAP0F_PACKET_GAP_US = 7300;
-static constexpr uint32_t COUNTRYMOD_MAX_PACKET_GAP_US = 20000;
+static constexpr uint32_t COUNTRYMOD_PACKET_GAP_US = 40000;
+static constexpr uint32_t COUNTRYMOD_MAX_PACKET_GAP_US = 120000;
 static constexpr uint8_t COUNTRYMOD_TRAILER_BITS = 0b010;
 static constexpr uint8_t COUNTRYMOD_TRAILER_NBITS = 3;
 static constexpr uint8_t COUNTRYMOD_FRAME_NBITS = 32 + COUNTRYMOD_TRAILER_NBITS;
@@ -68,11 +68,11 @@ void CountrymodClimate::setup() {
 
 void CountrymodClimate::dump_config() {
   LOG_CLIMATE("", "Countrymod Climate", this);
-  ESP_LOGCONFIG(TAG, "  YAP0F packet gap: %" PRIu32 " us", this->packet_gap_us_());
+  ESP_LOGCONFIG(TAG, "  Climate packet gap: %" PRIu32 " us", this->packet_gap_us_());
   ESP_LOGCONFIG(TAG, "  Use power bit: %s", this->use_power_bit_ ? "yes" : "no");
   if (this->configured_packet_gap_us_() > COUNTRYMOD_MAX_PACKET_GAP_US) {
-    ESP_LOGW(TAG, "  Configured inter_frame_delay is too large for YAP0F; using %" PRIu32 " us instead",
-             COUNTRYMOD_YAP0F_PACKET_GAP_US);
+    ESP_LOGW(TAG, "  Configured inter_frame_delay is outside the captured range; using %" PRIu32 " us instead",
+             COUNTRYMOD_PACKET_GAP_US);
   }
   if (this->feature_as_swing_) {
     ESP_LOGW(TAG, "  feature_as_swing is deprecated and ignored; use the negative_ion switch instead");
@@ -290,7 +290,7 @@ void CountrymodClimate::transmit_state() {
 
   ESP_LOGD(TAG,
            "Sending Countrymod climate packet pair: 0x%08" PRIX32 "/0x%08" PRIX32 " then 0x%08" PRIX32
-           "/0x%08" PRIX32 " (YAP0F packet gap: %" PRIu32 " us)",
+           "/0x%08" PRIX32 " (climate packet gap: %" PRIu32 " us)",
            first_frame, first_tail, second_frame, second_tail, this->packet_gap_us_());
 
   this->transmit_countrymod_climate_pair_(first_frame, first_tail, second_frame, second_tail);
@@ -446,7 +446,7 @@ uint32_t CountrymodClimate::configured_packet_gap_us_() const { return this->int
 uint32_t CountrymodClimate::packet_gap_us_() const {
   const uint32_t configured_gap_us = this->configured_packet_gap_us_();
   if (configured_gap_us == 7000 || configured_gap_us > COUNTRYMOD_MAX_PACKET_GAP_US) {
-    return COUNTRYMOD_YAP0F_PACKET_GAP_US;
+    return COUNTRYMOD_PACKET_GAP_US;
   }
   return configured_gap_us;
 }
