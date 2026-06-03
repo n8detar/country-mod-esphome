@@ -91,8 +91,7 @@ The `Mode` select is the canonical control for the remote's `AUTO`, `ECO`, and
 climate auto HVAC mode. Eco and Turbo are mutually exclusive.
 
 Fan control exposes standard `Auto` plus custom fan speeds `Speed 1` through
-`Speed 5`, matching the handheld remote. Fan Only accepts target temperature
-changes on this unit.
+`Speed 5`, matching the handheld remote.
 
 Home Assistant can show Fahrenheit while ESPHome stores temperatures in Celsius.
 The target temperature range is 16-30 C, equivalent to roughly 61-86 F.
@@ -265,7 +264,7 @@ first after each logical byte has been bit-reversed.
 | Byte | Field |
 | --- | --- |
 | `0` | Control byte: mode, power, fan display code, Negative Ion, Night. |
-| `1` | Temperature code: Celsius minus 16. Range `0x00`-`0x0E` means 16-30 C. Fan Only also uses this value. Eco uses fixed code `0x08`. |
+| `1` | Temperature code: Celsius minus 16. Range `0x00`-`0x0E` means 16-30 C. Fan Only packets include this byte, but the unit's behavior in Fan Only needs more captures. Eco uses fixed code `0x08`. |
 | `2` | Flags: `0x10` Turbo, `0x80` reserved/undocumented. |
 | `3` | Packet marker: `0x58` first packet, `0x78` second packet. |
 | `4` | Reserved, currently `0x00`. |
