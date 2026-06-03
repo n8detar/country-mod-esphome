@@ -6,15 +6,7 @@ YAP0F/YAP0F3 handheld IR remote protocol.
 This project is vibe-coded and provided as-is. Use it at your own risk.
 
 This has been tested with the CountryMod 12V DC RV Air Conditioner 10000 BTU RV
-AC Unit sold on Amazon under ASIN `B0DW3TYSNR`. ASIN means Amazon Standard
-Identification Number. That product text is included here only to make the repo
-easier to find for owners of the same unit.
-
-The protocol is full-state. A normal climate command sends two complete state
-packets, not a short button command. ESPHome's generic receiver often reports
-the first 32 bits as `remote.lg`, but this component transmits and receives the
-complete Countrymod packet structure, including trailer bits, hidden tail data,
-checksum, and captured packet timing.
+AC Unit sold on Amazon under ASIN `B0DW3TYSNR`.
 
 ## Example
 
@@ -76,9 +68,8 @@ button:
     name: View Voltage
 ```
 
-`rmt_symbols: 192` is recommended because each climate transmit contains two
-long full-state packets. `non_blocking: false` keeps the packet pair together as
-one IR transmit sequence.
+`rmt_symbols: 192` and `non_blocking: false` are recommended for reliable
+transmission with this component.
 
 Set `supports_heat: false` for cool-only units. Omit it, or set it to `true`, if
 your unit responds to heat commands.
@@ -91,23 +82,20 @@ your unit responds to heat commands.
 | `select.countrymod` | `Mode` | Remote mode selector: `Auto`, `Eco`, or `Turbo`. |
 | `switch.countrymod` | `night` | Night/sleep flag. |
 | `switch.countrymod` | `negative_ion` | Negative Ion flag from the remote/manual. |
-| `button.countrymod` | `display` | Sends the `DISP.` screen-display command. |
-| `button.countrymod` | `view_voltage` | Sends the View Voltage command. |
-| `button.countrymod` | `light` | Sends the crossed-out lightbulb command. |
+| `button.countrymod` | `display` | Triggers the remote's `DISP.` function. |
+| `button.countrymod` | `view_voltage` | Triggers the remote's View Voltage function. |
+| `button.countrymod` | `light` | Triggers the crossed-out lightbulb function. |
 
 The `Mode` select is the canonical control for the remote's `AUTO`, `ECO`, and
-`TURBO` buttons. `Auto` means both Eco and Turbo protocol flags are off; it is
-not a separate climate auto HVAC mode. Eco and Turbo are mutually exclusive.
+`TURBO` buttons. `Auto` means Eco and Turbo are both off; it is not a separate
+climate auto HVAC mode. Eco and Turbo are mutually exclusive.
 
 Fan control exposes standard `Auto` plus custom fan speeds `Speed 1` through
-`Speed 5`, matching the handheld remote. Fan speeds 3, 4, and 5 share the same
-first-frame display fan code; the second packet tail stores the exact speed.
-
-Fan Only is still a temperature-carrying mode in this protocol. The component
-keeps the target temperature in byte 1 when transmitting Fan Only packets.
+`Speed 5`, matching the handheld remote. Fan Only accepts target temperature
+changes on this unit.
 
 Home Assistant can show Fahrenheit while ESPHome stores temperatures in Celsius.
-The protocol range is 16-30 C, equivalent to roughly 61-86 F.
+The target temperature range is 16-30 C, equivalent to roughly 61-86 F.
 
 ## Configuration
 
@@ -124,13 +112,14 @@ climate:
 | Option | Default | Description |
 | --- | --- | --- |
 | `transmitter_id` | required | Remote transmitter used for IR output. |
-| `receiver_id` | optional | Remote receiver used to observe handheld remote packets. |
-| `supports_cool` | `true` | Exposes cool mode and accepts cool frames. |
-| `supports_heat` | `true` | Exposes heat mode and accepts heat frames. |
-| `inter_frame_delay` | `40ms` | Gap between the two full-state climate packets. |
-| `use_power_bit` | `true` | Uses protocol bit `0x08` to distinguish on/off climate frames. |
+| `receiver_id` | optional | Remote receiver used to observe handheld remote activity. |
+| `supports_cool` | `true` | Exposes cool mode. |
+| `supports_heat` | `true` | Exposes heat mode. |
+| `inter_frame_delay` | `40ms` | Delay used by the Countrymod climate transmission sequence. |
+| `use_power_bit` | `true` | Enables normal on/off behavior for YAP0F/YAP0F3 remotes. |
 
-`inter_frame_delay: 40ms` matches the captured YAP0F/YAP0F3 remote behavior.
+Leave `inter_frame_delay: 40ms` unless you are testing a different remote
+variant.
 
 ### Mode Select
 
@@ -142,7 +131,7 @@ select:
 ```
 
 Options are `Auto`, `Eco`, and `Turbo`. `Auto` is the default state at startup
-unless a received packet enables Eco or Turbo.
+unless the handheld remote syncs Eco or Turbo.
 
 ### Switches
 
@@ -173,18 +162,17 @@ button:
 
 Supported button types are:
 
-| Type | Command frame | Description |
-| --- | --- | --- |
-| `display` | `0x22AA66EE` | Screen display command. |
-| `view_voltage` | `0x55DD33BB` | View Voltage command. |
-| `light` | `0x008844CC` | Crossed-out lightbulb command. |
+| Type | Description |
+| --- | --- |
+| `display` | Remote `DISP.` function. |
+| `view_voltage` | Remote View Voltage function. |
+| `light` | Remote crossed-out lightbulb function. |
 
 ## Optional Receiver
 
 A receiver is not required for transmit-only control. If configured, the climate
-entity decodes the full Countrymod packet, including the hidden 32-bit tail and
-checksum. This allows handheld remote sync to resolve exact fan speeds above
-Speed 3.
+entity observes the handheld remote and keeps Home Assistant state in sync,
+including the exact fan speed.
 
 ```yaml
 remote_receiver:
@@ -209,20 +197,19 @@ climate:
     supports_heat: false
 ```
 
-The `idle: 25ms` setting keeps each frame/tail pair in one receiver event while
-still allowing the remote's two full-state packets to arrive as separate events.
-The first packet updates shared state, and the second packet updates the exact
-fan speed from the tail nibble.
-
-`dump: raw` is useful while testing because the generic LG dump only shows the
-first 32-bit frame. The Countrymod climate decoder uses the raw timing stream
-internally; no raw data needs to be copied into YAML.
+The receiver settings shown above are recommended for the YAP0F/YAP0F3 remote.
+`dump: raw` is useful while troubleshooting receiver issues, but no captured raw
+data needs to be copied into YAML.
 
 ## Protocol Notes
 
 This protocol is compatible with the YAP0F/YAP0F3-style Gree/Kelvinator packet
 family, but the field names below describe the behavior captured from the
-CountryMod RV AC remote.
+CountryMod RV AC remote. A normal climate command is full-state and sends two
+complete state packets, not a short button command. ESPHome's generic receiver
+often reports the first 32 bits as `remote.lg`, but the complete Countrymod
+message also includes trailer bits, hidden tail data, checksum, and captured
+timing.
 
 ### Packet Shape
 
@@ -247,6 +234,11 @@ speed in the tail, which is required to distinguish Speed 3, Speed 4, and Speed
 One-shot button commands are shorter: they send only a 32-bit command frame plus
 the fixed `010` trailer and final mark. They do not include an 8-byte climate
 state or tail.
+
+For receiving, `idle: 25ms` keeps each frame/tail pair in one receiver event
+while still allowing the remote's two full-state packets to arrive as separate
+events. The first packet updates shared state, and the second packet updates the
+exact fan speed from the tail nibble.
 
 ### Timing
 
