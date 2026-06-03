@@ -118,11 +118,13 @@ void CountrymodClimate::control(const climate::ClimateCall &call) {
         this->mode = requested_mode;
         this->last_on_mode_ = requested_mode;
         this->eco_on_ = false;
+        this->turbo_on_ = false;
         break;
       case climate::CLIMATE_MODE_FAN_ONLY:
         this->mode = requested_mode;
         this->last_on_mode_ = requested_mode;
         this->eco_on_ = false;
+        this->turbo_on_ = false;
         break;
       case climate::CLIMATE_MODE_OFF:
         this->mode = climate::CLIMATE_MODE_OFF;
@@ -190,8 +192,16 @@ bool CountrymodClimate::set_mode_option(size_t mode_index) {
       }
       break;
     case COUNTRYMOD_MODE_TURBO:
+      if (!this->supports_cool_) {
+        ESP_LOGW(TAG, "Turbo mode requires cool support");
+        return false;
+      }
       this->eco_on_ = false;
       this->turbo_on_ = true;
+      this->last_on_mode_ = climate::CLIMATE_MODE_COOL;
+      if (this->mode != climate::CLIMATE_MODE_OFF) {
+        this->mode = climate::CLIMATE_MODE_COOL;
+      }
       break;
     default:
       ESP_LOGW(TAG, "Unsupported Countrymod mode select index: %u", static_cast<unsigned>(mode_index));
@@ -786,6 +796,15 @@ void CountrymodClimate::sanitize_state_() {
   }
   if (this->eco_on_) {
     this->turbo_on_ = false;
+    this->last_on_mode_ = climate::CLIMATE_MODE_COOL;
+    if (this->mode != climate::CLIMATE_MODE_OFF) {
+      this->mode = climate::CLIMATE_MODE_COOL;
+    }
+  }
+  if (this->turbo_on_ && !this->supports_cool_) {
+    this->turbo_on_ = false;
+  }
+  if (this->turbo_on_) {
     this->last_on_mode_ = climate::CLIMATE_MODE_COOL;
     if (this->mode != climate::CLIMATE_MODE_OFF) {
       this->mode = climate::CLIMATE_MODE_COOL;
