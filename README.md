@@ -84,6 +84,23 @@ sub-device in Home Assistant.
 `rmt_symbols: 192` and `non_blocking: false` are recommended for reliable
 transmission with this component.
 
+On ESP32-S3 and ESP32-P4 boards, ESPHome also supports DMA-backed RMT
+transmission. Use a larger RMT buffer when enabling DMA:
+
+```yaml
+remote_transmitter:
+  id: ir_tx
+  pin: GPIO4
+  carrier_duty_percent: 50%
+  use_dma: true
+  rmt_symbols: 512
+  non_blocking: false
+```
+
+`use_dma` is optional and only valid on compatible ESP32 variants.
+`non_blocking: false` is not required by ESPHome, but it is recommended here so
+the climate control call waits for the IR transmission to finish.
+
 Set `supports_heat: false` for cool-only units. Omit it, or set it to `true`, if
 your unit responds to heat commands.
 
