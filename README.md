@@ -85,7 +85,7 @@ sub-device in Home Assistant.
 transmission with this component.
 
 On ESP32-S3 and ESP32-P4 boards, ESPHome also supports DMA-backed RMT
-transmission. Use a larger RMT buffer when enabling DMA:
+transmission. The same RMT buffer size is sufficient with DMA:
 
 ```yaml
 remote_transmitter:
@@ -93,7 +93,7 @@ remote_transmitter:
   pin: GPIO4
   carrier_duty_percent: 50%
   use_dma: true
-  rmt_symbols: 512
+  rmt_symbols: 192
   non_blocking: false
 ```
 
