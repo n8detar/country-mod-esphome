@@ -1,0 +1,40 @@
+name: esphome-ci
+# Required lane: ESPHome pinned to the Mobile HA Device Builder add-on version (ESPHOME_VERSION).
+# Never flashes; no secrets. Shared verbatim across Nate's ESPHome component repos.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  pinned:
+    runs-on: docker
+    timeout-minutes: 90
+    container:
+      image: ghcr.io/esphome/esphome:2026.10.2
+      options: -v forgejo-esphome-cache:/cache
+    env:
+      PLATFORMIO_CORE_DIR: /cache/platformio
+      ESPHOME_DEFAULT_COMPILE_PROCESS_LIMIT: '6'
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - name: Exact-head checkout
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -eu
+          git init -q head
+          cd head
+          git remote add origin "http://192.168.1.6:3080/$REPO.git"
+          git -c http.extraHeader="Authorization: token $TOKEN" fetch -q origin "$SHA"
+          git checkout -q --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "$SHA"
+      - name: Pin consistency
+        run: |
+          cd head
+          test "$(cat ESPHOME_VERSION)" = 2026.10.2
+      - name: Unit tests, config and compile (never flash)
+        run: |
+          cd head
+          python ci/check_components.py --lane pinned

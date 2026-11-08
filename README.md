@@ -413,3 +413,27 @@ Cool mode at 72 F / 22 C, power on, no Eco/Turbo/Night/Negative Ion:
 | Speed 3 | `9C60001A/0004000C` | `9C60001E/00000C02` |
 | Speed 4 | `9C60001A/0004000C` | `9C60001E/0000020A` |
 | Speed 5 | `9C60001A/0004000C` | `9C60001E/00000A06` |
+
+## Primary repository, GitHub mirror and CI
+
+The primary repository is private [git.detar.me/hermes/country-mod-esphome](https://git.detar.me/hermes/country-mod-esphome).
+Forgejo push-mirrors it to [github.com/n8detar/country-mod-esphome](https://github.com/n8detar/country-mod-esphome) on
+every commit (plus an 8-hour retry). **GitHub is a downstream mirror: commit to Forgejo only.**
+A commit pushed directly to GitHub will be overwritten (the mirror force-pushes all branches and
+tags) or will make the mirror report an error. Devices keep using
+`github://n8detar/country-mod-esphome@main`, which is unchanged.
+
+CI (`.forgejo/workflows/`) never flashes and uses no secrets:
+
+- `esphome-ci.yml` (required): unit tests if present, then `esphome config` and
+  `esphome compile` for every `ci/tests/*.yaml` with ESPHome pinned to the Mobile HA
+  Device Builder add-on version (`ESPHOME_VERSION`, also the workflow image tag; bump both
+  together when the add-on updates).
+- `esphome-latest.yml` (early warning, non-blocking): the same configs against the newest
+  ESPHome release from PyPI, on pushes to `main` and weekly. A red run here means the next
+  ESPHome release will break this component; failures are reported to the infrastructure
+  Discord channel by the ESPHome CI watcher.
+
+Run locally: `python ci/check_components.py [--lane latest]` (needs `esphome` on PATH).
+The test configs use `external_components: type: local` and exercise every platform the
+component exposes; add a case whenever a platform or option is added.

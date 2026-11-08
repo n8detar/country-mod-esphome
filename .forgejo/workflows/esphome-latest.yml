@@ -1,0 +1,39 @@
+name: esphome-latest
+# Early-warning lane: newest ESPHome release from PyPI. Separate workflow so a failure is
+# visible (red run, reported to infra Discord by the CI watcher) without failing the required
+# pinned lane. Weekly schedule catches new releases without a commit. Never flashes; no secrets.
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 11 * * 1'
+  workflow_dispatch:
+jobs:
+  latest:
+    runs-on: docker
+    timeout-minutes: 120
+    container:
+      image: ghcr.io/esphome/esphome:2026.10.2
+      options: -v forgejo-esphome-cache:/cache
+    env:
+      PLATFORMIO_CORE_DIR: /cache/platformio
+      ESPHOME_DEFAULT_COMPILE_PROCESS_LIMIT: '6'
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - name: Exact-head checkout
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -eu
+          git init -q head
+          cd head
+          git remote add origin "http://192.168.1.6:3080/$REPO.git"
+          git -c http.extraHeader="Authorization: token $TOKEN" fetch -q origin "$SHA"
+          git checkout -q --detach FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "$SHA"
+      - name: Config and compile with the latest ESPHome release (early warning, never flash)
+        run: |
+          cd head
+          python ci/check_components.py --lane latest

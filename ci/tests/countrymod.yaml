@@ -1,0 +1,65 @@
+# CI-only build check. Never flashed. Exercises every countrymod platform and type.
+esphome:
+  name: ci-countrymod
+  devices:
+    - id: ci_device
+      name: CI Countrymod
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+logger:
+
+external_components:
+  - source:
+      type: local
+      path: ../../components
+    components: [countrymod]
+
+remote_transmitter:
+  id: ir_tx
+  pin: GPIO4
+  carrier_duty_percent: 50%
+  rmt_symbols: 192
+  non_blocking: false
+
+climate:
+  - platform: countrymod
+    id: rv_ac
+    name: Climate
+    device_id: ci_device
+    transmitter_id: ir_tx
+    supports_heat: false
+    inter_frame_delay: 40ms
+    use_power_bit: true
+
+select:
+  - platform: countrymod
+    countrymod_id: rv_ac
+    name: Mode
+
+switch:
+  - platform: countrymod
+    countrymod_id: rv_ac
+    type: night
+    name: Night
+  - platform: countrymod
+    countrymod_id: rv_ac
+    type: negative_ion
+    name: Negative Ion
+
+button:
+  - platform: countrymod
+    countrymod_id: rv_ac
+    type: display
+    name: Display
+  - platform: countrymod
+    countrymod_id: rv_ac
+    type: light
+    name: Light
+  - platform: countrymod
+    countrymod_id: rv_ac
+    type: view_voltage
+    name: View Voltage
