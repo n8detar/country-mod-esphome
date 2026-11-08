@@ -4,6 +4,7 @@
 #include "esphome/components/climate_ir/climate_ir.h"
 #include "esphome/components/select/select.h"
 #include "esphome/components/switch/switch.h"
+#include "esphome/core/version.h"
 
 #include <cinttypes>
 
@@ -55,6 +56,15 @@ class CountrymodClimate : public climate_ir::ClimateIR {
   bool on_receive(remote_base::RemoteReceiveData data) override;
 
   static uint8_t rev8_(uint8_t value);
+
+  // ESPHome 2026.10 replaced ClimateIR's supports_cool_/supports_heat_ flags with a modes_ mask.
+#if ESPHOME_VERSION_CODE >= VERSION_CODE(2026, 10, 0)
+  bool supports_cool_mode_() const { return this->modes_.count(climate::CLIMATE_MODE_COOL) > 0; }
+  bool supports_heat_mode_() const { return this->modes_.count(climate::CLIMATE_MODE_HEAT) > 0; }
+#else
+  bool supports_cool_mode_() const { return this->supports_cool_; }
+  bool supports_heat_mode_() const { return this->supports_heat_; }
+#endif
 
   uint32_t make_frame_(bool second_packet) const;
   uint32_t make_tail_(bool second_packet) const;
